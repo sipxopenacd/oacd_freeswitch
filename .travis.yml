@@ -1,0 +1,10 @@
+before_install:
+  - cp rebar.config.travis rebar.config
+  - git clone https://github.com/dannaaduna/oacd_umbrella.git
+  - make -C oacd_umbrella
+language: erlang
+notifications:
+  email: false
+otp_release:
+  - R14B04
+  - R15B01
