@@ -260,12 +260,12 @@ url_pop(Agent, Args, [{Window, Url} | Tail]) ->
 
 -ifdef(TEST).
 
-url_pop_test() ->
-	{ok, Aconn} = gen_server_mock:new(),
-	{ok, Apid} = agent:start(#agent{login = "agent", connection = Aconn}),
-	gen_server_mock:expect_cast(Aconn, fun({url_pop,"http://www.example.com","test 1"}, _) -> ok end),
-	gen_server_mock:expect_cast(Aconn, fun({url_pop,"http://subdomain.example.com","test 2"}, _) -> ok end),
-	url_pop(Apid, []),
-	gen_server_mock:assert_expectations(Aconn).
+% url_pop_test() ->
+% 	{ok, Aconn} = gen_server_mock:new(),
+% 	{ok, Apid} = agent:start(#agent{login = "agent", connection = Aconn}),
+% 	gen_server_mock:expect_cast(Aconn, fun({url_pop,"http://www.example.com","test 1"}, _) -> ok end),
+% 	gen_server_mock:expect_cast(Aconn, fun({url_pop,"http://subdomain.example.com","test 2"}, _) -> ok end),
+% 	url_pop(Apid, []),
+% 	gen_server_mock:assert_expectations(Aconn).
 	
 -endif.
