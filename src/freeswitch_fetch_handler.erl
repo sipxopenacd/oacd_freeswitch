@@ -7,6 +7,10 @@
 
 -include_lib("oacd_core/include/log.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -define(default_dial_string(Type), case Type of
 		sip_registration -> "sofia/internal/$1%";
 		sip -> "sofia/internal/sip:$1";
