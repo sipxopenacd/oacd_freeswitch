@@ -194,7 +194,8 @@ end).
 	do_dial_string/3,
 	get_agent_dial_string/2,
 	monitor_agent/2,
-	monitor_client/2
+	monitor_client/2,
+	get_node/0
 ]).
 
 %% gen_server callbacks
@@ -488,13 +489,13 @@ handle_call({ring, EndPointData, _Callrec}, _From, #state{dialstring = BaseDails
 		Error ->
 			{reply, Error, State}
 	end;
-handle_call({ring, {Type, Data}, _Callrec}, _From, #state{fetch_domain_user = BaseDialOpts} = State) ->
-	Default = case Type of
-		sip -> "sofia/internal/sip:$1";
-		iax2 -> "iax2/$1";
-		h323 -> "opal/h323:$1";
-		pstn -> ""
-	end,
+handle_call({ring, {Type, _Data}, _Callrec}, _From, #state{fetch_domain_user = BaseDialOpts} = State) ->
+	% Default = case Type of
+	% 	sip -> "sofia/internal/sip:$1";
+	% 	iax2 -> "iax2/$1";
+	% 	h323 -> "opal/h323:$1";
+	% 	pstn -> ""
+	% end,
 	BaseDialString = proplists:get_value(Type, BaseDialOpts, ?default_dial_string(Type)),
 	NewOptions = [{dialstring, BaseDialString}],
 	case freeswitch_ring:start(State#state.nodename, freeswitch_ring_persistent, NewOptions) of
@@ -841,7 +842,7 @@ fetch_domain_user(Node, State) ->
 											freeswitch_media_manager:do_dial_string(proplists:get_value(h323, State, "opal/h323:"), Data, []);
 										{pstn, Data} ->
 											freeswitch_media_manager:do_dial_string(proplists:get_value(dialstring, State, ""), Data, []);
-										rtmp ->
+										{rtmp, Data} ->
 											freeswitch_media_manager:do_dial_string(proplists:get_value(rtmp, State, "rtmp/$1"), Data, [])
 									end,
 									?NOTICE("returning ~s for user directory entry ~s", [DialString, User]),
@@ -919,22 +920,22 @@ fetch_domain_user(Node, State) ->
 			?MODULE:fetch_domain_user(Node, State)
 	end.
 
-return_a1_hash(Domain, User, Node, FetchID) ->
-	case agent_auth:get_extended_prop({login, User}, a1_hash) of
-		{ok, Hash} ->
-			freeswitch:fetch_reply(Node, FetchID, lists:flatten(io_lib:format(?REGISTERRESPONSE, [Domain, User, Hash])));
-		undefined ->
-			freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE);
-		{error, noagent} ->
-			case agent_auth:get_extended_prop({login, re:replace(User, "_", "@", [{return, list}])}, a1_hash) of
-				{ok, Hash} ->
-					freeswitch:fetch_reply(Node, FetchID, lists:flatten(io_lib:format(?REGISTERRESPONSE, [Domain, User, Hash])));
-				undefined ->
-					freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE);
-				{error, noagent} ->
-					freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE)
-			end
-	end.
+% return_a1_hash(Domain, User, Node, FetchID) ->
+% 	case agent_auth:get_extended_prop({login, User}, a1_hash) of
+% 		{ok, Hash} ->
+% 			freeswitch:fetch_reply(Node, FetchID, lists:flatten(io_lib:format(?REGISTERRESPONSE, [Domain, User, Hash])));
+% 		undefined ->
+% 			freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE);
+% 		{error, noagent} ->
+% 			case agent_auth:get_extended_prop({login, re:replace(User, "_", "@", [{return, list}])}, a1_hash) of
+% 				{ok, Hash} ->
+% 					freeswitch:fetch_reply(Node, FetchID, lists:flatten(io_lib:format(?REGISTERRESPONSE, [Domain, User, Hash])));
+% 				undefined ->
+% 					freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE);
+% 				{error, noagent} ->
+% 					freeswitch:fetch_reply(Node, FetchID, ?EMPTYRESPONSE)
+% 			end
+% 	end.
 
 %get_agent_dial_string(#agent{endpointtype = {_, _, Endpointtype}} = Agent, Opts, State) ->
 %	get_agent_dial_string(Agent#agent{endpointtype = Endpointtype}, Opts, State);

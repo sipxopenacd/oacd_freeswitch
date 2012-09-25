@@ -42,7 +42,7 @@ merge_args([{Key, _} | DTail], [{Key, Val} | OTail], Acc) ->
 	Acc0 = [{Key, Val} | Acc],
 	merge_args(DTail, OTail, Acc0);
 
-merge_args([{Key, Val} = H | DTail], [{Key1, _} | _] = Overrides, Acc) when Key > Key1 ->
+merge_args([{Key, _Val} = H | DTail], [{Key1, _} | _] = Overrides, Acc) when Key > Key1 ->
 	Acc0 = [H | Acc],
 	merge_args(DTail, Overrides, Acc0);
 
