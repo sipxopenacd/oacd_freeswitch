@@ -196,7 +196,7 @@ reserve_agent(State) ->
 	case grab_agent(Agents, Call) of
 		none ->
 			{stop, no_agents};
-		{ok, {AgentPid, _ID, _Skills} = Agent} ->
+		{ok, {AgentPid, _ID, _Skills} = _Agent} ->
 			% so, we've reserved an agent, time to do make an outvound call
 			% sadly freeswitch_ring isn't generic enough to be useful here, so we have to do it ourselves for now
 			Client = State#state.client,

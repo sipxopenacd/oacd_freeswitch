@@ -171,15 +171,15 @@ handle_answer(Apid, inqueue_ringing, Callrec, _GenMediaState, #state{file=File} 
 handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
 	AgentRec = agent:dump_state(Apid),
 	handle_ring({Apid, AgentRec}, RingData, Callrec, State);
-handle_ring({_Apid, #agent{ring_channel = {undefined, persistent, _}} = Agent}, RingData, _Callrec, State) ->
+handle_ring({_Apid, #agent{ring_channel = {undefined, persistent, _}} = Agent}, _RingData, _Callrec, State) ->
 	?WARNING("Agent (~p) does not have it's persistent channel up yet", [Agent#agent.login]),
 	{invalid, State};
 
-handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistent, _EndpointType}} = Agent}, RingData, Callrec, State) ->
+handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistent, _EndpointType}} = _Agent}, _RingData, _Callrec, State) ->
 	?INFO("Ring channel made things happy, I assume", []),
 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}};
 
-handle_ring({Apid, #agent{ring_channel = {EndpointPid, transient, _EndpintType}} = Agent}, RingData, Callrec, State) when is_pid(EndpointPid) ->
+handle_ring({Apid, #agent{ring_channel = {EndpointPid, transient, _EndpintType}} = _Agent}, _RingData, _Callrec, State) when is_pid(EndpointPid) ->
 	?INFO("Agent already has transient ring pid up:  ~p", [EndpointPid]),
 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}}.
 

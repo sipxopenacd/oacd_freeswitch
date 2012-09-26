@@ -196,7 +196,7 @@ urlpop_getvars(#state{ivroption = Ivropt} = _State) ->
 
 %% @private
 -spec(handle_announce/5 :: (Announcement :: string(), StateName :: atom(), Call :: #call{}, Internal :: any(), State :: #state{}) -> {'ok', #state{}}).
-handle_announce(Announcement, _StateName, Call, Internal, State) ->
+handle_announce(Announcement, _StateName, Call, _Internal, State) ->
 	freeswitch:sendmsg(State#state.cnode, Call#call.id,
 		[{"call-command", "execute"},
 			{"execute-app-name", "playback"},
@@ -297,12 +297,12 @@ handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
 handle_ring({_Apid, #agent{ring_channel = {undefined, persistant, _}} = Agent}, _RingData, _Callrec, State) ->
 	?WARNING("Agent (~p) does not have it's persistant channel up yet", [Agent#agent.login]),
 	{invalid, State};
-handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistant, _EndPointType}}} = Agent, _RingData, Callrec, State) ->
+handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistant, _EndPointType}}} = _Agent, _RingData, Callrec, State) ->
 	%% a persisitant ring does the hard work for us
 	%% go right to the okay.
 	?INFO("Ring channel made things happy, I assume", []),
 	{ok, [{"itxt", State#state.ivroption}], Callrec#call{ring_path = inband, media_path = inband}, State#state{ringchannel = EndpointPid, agent_pid = Apid}};
-handle_ring({Apid, #agent{ring_channel = {RPid, transient, _}} = AgentRec}, _RingData, Callrec, State) ->
+handle_ring({Apid, #agent{ring_channel = {RPid, transient, _}} = _AgentRec}, _RingData, _Callrec, State) ->
 	NewStatename = case State#state.statename of
 		inqueue -> inqueue_ringing;
 		oncall -> oncall_ringing
@@ -345,7 +345,7 @@ handle_voicemail(_, Call, _, State) ->
 
 %% @hidden
 -spec(handle_spy/5 :: (Spy :: {pid(), #agent{}}, StateName :: atom(), Call :: #call{}, Internal :: #state{}, State :: any()) -> {'error', 'bad_agent', #state{}} | {'ok', #state{}}).
-handle_spy({Agent, AgentRec}, oncall, Call, #state{cnode = Fnode, ringchannel = Chan} = Internal, State) when is_pid(Chan) ->
+handle_spy({Agent, AgentRec}, oncall, Call, #state{cnode = Fnode, ringchannel = Chan} = Internal, _State) when is_pid(Chan) ->
 	agent:blab(Agent, "While spying, you have the following options:\n"++
 		"* To whisper to the agent; press 1\n"++
 		"* To whisper to the caller; press 2\n"++
@@ -524,9 +524,9 @@ handle_cast(retrieve_conference, _Statename, Call, _GenMediaState, #state{
 	{{mediapush, NewState}, State#state{statename = NewState}};
 
 % 3rd_party -> hold_conference_3rdparty | in_conference | hold_conference
-handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = '3rd_party'} = State) ->
+handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = '3rd_party'} = State) ->
 	?INFO("Place 3rd party on hold", []),
-	#state{cnode = Fnode, moh = Muzak, ringuuid = Ringid, '3rd_party_id' = ThirdPId} = State,
+	#state{cnode = Fnode, moh = _Muzak, ringuuid = Ringid, '3rd_party_id' = ThirdPId} = State,
 	ok = fs_send_execute(Fnode, Ringid, "set", "hangup_after_bridge=false"),
 	ok = fs_send_execute(Fnode, Ringid, "set", "park_after_bridge=true"),
 	freeswitch:api(Fnode, uuid_transfer, Ringid ++ " park inline"),
@@ -541,7 +541,7 @@ handle_cast(retrieve_conference, Statename, Call, GenMediaState, #state{statenam
 	{noreply, MidState} = handle_cast(toggle_hold, Statename, Call, GenMediaState, State),
 	{noreply, MidState#state{statename = in_conference_3rdparty}};
 
-handle_cast(retrieve_3rd_party, _Statename, Call, _GenMediaState, #state{statename = 'in_conference_3rdparty'} = State) ->
+handle_cast(retrieve_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = 'in_conference_3rdparty'} = State) ->
 	?INFO("Taking agent out of conference, briding to 3rdparyt",[]),
 	#state{cnode = Fnode, ringuuid = Ringid, '3rd_party_id' = Thirdy} = State,
 	freeswitch:api(Fnode, uuid_bridge, Thirdy ++ " " ++ Ringid),
@@ -552,10 +552,10 @@ handle_cast(hangup_3rd_party, Statename, Call, GenMediaState, #state{statename =
 	{noreply, MidState} = handle_cast(toggle_hold, Statename, Call, GenMediaState, State),
 	handle_cast(hangup_3rd_party, Statename, Call, GenMediaState, MidState);
 
-handle_cast({merge_3rd_party, _IncludeSelf}, _Statename, Call, _GenMediaState, #state{'3rd_party_id' = undefined} = State) ->
+handle_cast({merge_3rd_party, _IncludeSelf}, _Statename, _Call, _GenMediaState, #state{'3rd_party_id' = undefined} = State) ->
 	{noreply, State};
 
-handle_cast({merge_3rd_party, IncludeAgent}, _Statename, Call, _GenMediaState, State) ->
+handle_cast({merge_3rd_party, IncludeAgent}, _Statename, _Call, _GenMediaState, State) ->
 	#state{cnode = Fnode, ringuuid = Ringid, '3rd_party_id' = Thirdid, conference_id = Confid} = State,
 	NextState = case IncludeAgent of
 		true -> 'in_conference';
@@ -566,20 +566,20 @@ handle_cast({merge_3rd_party, IncludeAgent}, _Statename, Call, _GenMediaState, S
 	{noreply, State#state{statename = NextState}};
 
 % retrieve conference also works here.
-handle_cast(retrieve_3rd_party, _Statename, Call, _GenMediaState, #state{statename = hold_conference_3rdparty} = State) ->
+handle_cast(retrieve_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = hold_conference_3rdparty} = State) ->
 	#state{cnode= Fnode, ringuuid = Ringid, '3rd_party_id' = Thirdpid} = State,
 	?INFO("Picking up help 3rd party:  ~s", [Thirdpid]),
 	freeswitch:bgapi(Fnode, uuid_bridge, Thirdpid ++ " " ++ Ringid),
 	{noreply, State#state{statename = '3rd_party'}};
 
-handle_cast(hangup_3rd_party, _Statename, Call, _GenMediaState, #state{statename = 'hold_conference_3rdparty'} = State) ->
+handle_cast(hangup_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = 'hold_conference_3rdparty'} = State) ->
 	?INFO("hangling up on 3rd party", []),
 	#state{cnode = Fnode, '3rd_party_id' = Thirdid} = State,
 	freeswitch:bgapi(Fnode, uuid_kill, Thirdid),
 	{noreply, State#state{statename = 'hold_conference'}};
 
 % in_conference -> '3rdparty' | 'conference_hold'
-handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = 'in_conference'} = State) ->
+handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = 'in_conference'} = State) ->
 	?INFO("Place conference on hold", []),
 	#state{cnode = Fnode, ringuuid = Ringid} = State,
 	ok = fs_send_execute(Fnode, Ringid, "set", "hangup_after_bridge=false"),
@@ -742,7 +742,7 @@ handle_cast(Request, Statename, Call, GenMediaState, State) when is_record(Reque
 			{noreply, State}
 	end;
 
-handle_cast({'3rd_party_pickup', ChanPid}, _Statename, Call, _GenMediaState, #state{'3rd_party_mon' = {ChanPid, ChanMon}} = State) ->
+handle_cast({'3rd_party_pickup', ChanPid}, _Statename, _Call, _GenMediaState, #state{'3rd_party_mon' = {ChanPid, _ChanMon}} = State) ->
 	#state{cnode = Fnode, '3rd_party_id' = OtherParty, ringuuid = AgentChan} = State,
 	freeswitch:bgapi(Fnode, uuid_bridge, OtherParty ++ " " ++ AgentChan),
 	{noreply, State#state{statename = '3rd_party'}};
@@ -869,7 +869,7 @@ code_change(_OldVsn, _Call, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 %% @private
-fs_send_execute(Node, Callid, Name, Arg) ->
+fs_send_execute(Node, Callid, _Name, Arg) ->
 	freeswitch:sendmsg(Node, Callid, [
 		{"call-command", "execute"},
 		{"execute-app-name", "set"},
@@ -959,7 +959,7 @@ case_event_name("CHANNEL_BRIDGE", UUID, _Rawcall, Callrec, #state{ringchannel = 
 	end),
 	{noreply, State#state{statename = oncall, spawn_oncall_mon = SpawnOncall, ringuuid = RingUUID}};
 
-case_event_name("CHANNEL_PARK", Thirdy, Rawcall, Callrec, #state{
+case_event_name("CHANNEL_PARK", Thirdy, _Rawcall, Callrec, #state{
 	statename = 'in_conference_3rdparty', '3rd_party_id' = Thirdy} = State) ->
 		#state{conference_id = Confid, cnode = Fnode, ringuuid = Ringid} = State,
 		?DEBUG("Most likely in the middle of putting the agent in a conference", []),
@@ -967,7 +967,7 @@ case_event_name("CHANNEL_PARK", Thirdy, Rawcall, Callrec, #state{
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
 	{{mediapush, 'in_conference_3rdparty'}, State};
 
-case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{statename = hold_conference_3rdparty, '3rd_party_id' = UUID} = State) ->
+case_event_name("CHANNEL_PARK", UUID, _Rawcall, Callrec, #state{statename = hold_conference_3rdparty, '3rd_party_id' = UUID} = State) ->
 	?DEBUG("park of the 3rd party, proll a hold", []),
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
 	{{mediapush, State#state.statename}, State};
@@ -995,7 +995,7 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 	cdr:media_custom(Callrec, 'oncall_hold', ?cdr_states, []),
 	{{mediapush, caller_hold}, State};
 
-case_event_name("CHANNEL_DESTROY", UUID, Rawcall, Callrec, #state{
+case_event_name("CHANNEL_DESTROY", UUID, _Rawcall, _Callrec, #state{
 		'3rd_party_id' = UUID, statename = Statename} = State) ->
 	{{mediapush, Statename}, State#state{'3rd_party_id' = undefined}};
 
@@ -1131,7 +1131,7 @@ case_event_name("DTMF", UUID, Rawcall, Callrec, #state{allow_voicemail = VmAllow
 			{noreply, State}
 	end;
 
-case_event_name({error, notfound}, UUID, Rawcall, Callrec, State) ->
+case_event_name({error, notfound}, UUID, Rawcall, _Callrec, State) ->
 	?WARNING("event name not found: ~p for ~p", [proplists:get_value("Content-Type", Rawcall), UUID]),
 	{noreply, State};
 

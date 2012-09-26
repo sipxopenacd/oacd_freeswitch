@@ -198,7 +198,7 @@ start(Agent, Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) 
 start_link(Fsnode, Callbacks, Options) ->
 	gen_server:start_link(?MODULE, [Fsnode, Callbacks, Options], []).
 
-start_link(Agent, _Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
+start_link(_Agent, _Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
 	NewOptions = [{call, Call} | Options],
 	gen_server:start_link(?MODULE, [Fsnode, Callbacks, NewOptions], []).
 
