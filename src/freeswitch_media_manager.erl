@@ -14,7 +14,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson and Micah Warren.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -27,8 +27,8 @@
 %%	Micah Warren <micahw at lordnull dot com>
 %%
 
-%% @doc The controlling module for connection OpenACD to a freeswitch 
-%% installation.  There are 2 primary requirements for this work:  
+%% @doc The controlling module for connection OpenACD to a freeswitch
+%% installation.  There are 2 primary requirements for this work:
 %% the freeswitch installation must have mod_erlang installed and active,
 %% and the freeswitch dialplan must add the following variables added
 %% to the call data:
@@ -36,14 +36,14 @@
 %% <dt>queue</dt><dd>The name of the queue as configured in OpenACD</dd>
 %% <dt>brand</dt><dd>The Id of the client to associate the call with</dd>
 %% </dl>
-%% Primary job of this module is to listen to freeswitch for events, and 
+%% Primary job of this module is to listen to freeswitch for events, and
 %% shove those events to the appriate child process.
 %%
 %% This also acts as the reference implementation of a ring_manager.  A ring
 %% manager is responsible for handling requests from agents to create a ring
 %% channel.
 %%
-%% A proper ring channel will respond to `{ring, AgentRec, Callrec}' with 
+%% A proper ring channel will respond to `{ring, AgentRec, Callrec}' with
 %% either `{error, What}' or `{ok, Pid, Paths}' where pid is the process id the
 %% passed in agent will use as it's ring channel.
 %%
@@ -55,35 +55,35 @@
 %%
 %% The endpoint type is a 3 element tuple.  The first element is the ring
 %% channel pid, if there is one.  This can usually be ignored as the agent
-%% will requrest a ring only if it does not have a ring pid.  The second 
-%% element is either `persistent' or `transient'.  `persistent' means the 
+%% will requrest a ring only if it does not have a ring pid.  The second
+%% element is either `persistent' or `transient'.  `persistent' means the
 %% will use the returned pid for any future ringing.  `transient' means the
-%% returned pid will be used only for the given ring duration and then 
+%% returned pid will be used only for the given ring duration and then
 %% promply dropped like a bad habit.  The final bit is an end point type
 %% the agent process feels may be helpful to ring itself.  The values passed
 %% by default are useful to freeswitch_media_manager, though this may not be
 %% true for other ring_managers.
 %%
 %% Endpointdata is a string the agent supplies which may help ring itself.
-%% In the case of freeswitch_media_manager, the endpointdata or login are 
+%% In the case of freeswitch_media_manager, the endpointdata or login are
 %% combined with the sip, iax2, h323, or dialstring options (depending on
 %% the endpointtype).
-%% 
-%% Finally, the Callrec will be either `persistent' when setting up a 
-%% persistent ring channel, `test' when checking to see if an agent is 
-%% ringable, or the actual call record the ring channel will be used to 
-%% ring for.  This allows the ring_manager to tailor the ring channel used 
-%% to the media that is needed, without the agent needed to know much.  In 
-%% freeswith_media_manager's case, this allows it to choose between 
-%% freeswitch_transient that will die when answered (non freeswitch media) 
-%% or hang around until the call ends (freeswitch medias).  For persistent 
-%% ring channels, they will get the call record when they need to start 
+%%
+%% Finally, the Callrec will be either `persistent' when setting up a
+%% persistent ring channel, `test' when checking to see if an agent is
+%% ringable, or the actual call record the ring channel will be used to
+%% ring for.  This allows the ring_manager to tailor the ring channel used
+%% to the media that is needed, without the agent needed to know much.  In
+%% freeswith_media_manager's case, this allows it to choose between
+%% freeswitch_transient that will die when answered (non freeswitch media)
+%% or hang around until the call ends (freeswitch medias).  For persistent
+%% ring channels, they will get the call record when they need to start
 %% ringing, allowing them to make the choice.
 %%
-%% That just leaves that `Paths' varaible in the success return.  `Paths' 
+%% That just leaves that `Paths' varaible in the success return.  `Paths'
 %% indicates which interactions can be requrested by the agent.  In the case
-%% of a persisitant channel with is ignored since the channel cannot be 
-%% answered or hungup on outside of OpenACD.  However, for transient 
+%% of a persisitant channel with is ignored since the channel cannot be
+%% answered or hungup on outside of OpenACD.  However, for transient
 %% channels, the answer can happen outside the agent interface.  Furthermore
 %% some medias cannot be answered or hungup on within OpenACD.  Thus, there
 %% are 4 possible responses for `Paths':<ul>
@@ -94,10 +94,10 @@
 %% </ul>
 %% `both' indicates an agent can answer and hangup the media from the agent
 %% interface.  `answer' means only answering the media can be done.
-%% `hangup' means only hanging up the media.  Finally, `neither' means 
-%% answering and hanging up must be done through different means, such as 
+%% `hangup' means only hanging up the media.  Finally, `neither' means
+%% answering and hanging up must be done through different means, such as
 %% the softphone.
-%% channel can be answered 
+%% channel can be answered
 %% @see freeswitch_media
 
 -module(freeswitch_media_manager).
@@ -174,8 +174,8 @@ end).
 
 %% API
 -export([
-	start_link/2, 
-	start/2, 
+	start_link/2,
+	start/2,
 	stop/0,
 	get_handler/1,
 	notify/2,
@@ -226,7 +226,7 @@ end).
 -type(h323_opt() :: {h323, string()}).
 -type(rtmp_opt() :: {rtmp, string()}).
 -type(not_ring_manager_opt() :: 'not_ring_manager').
--type(start_opt() :: 
+-type(start_opt() ::
 	domain_opt() |
 	dialstring_opt() |
 	sip_opt() |
@@ -236,7 +236,7 @@ end).
 	not_ring_manager_opt()
 ).
 -type(start_opts() :: [start_opt()]).
-%% @doc Start the media manager unlinked to the parant process with C node `node() Nodemane' 
+%% @doc Start the media manager unlinked to the parant process with C node `node() Nodemane'
 %% and `[{atom(), term()] Options'.
 %% <ul>
 %% <li>`domain :: string()'</li>
@@ -245,8 +245,8 @@ end).
 -spec(start/2 :: (Nodename :: atom(), Options :: start_opts()) -> {'ok', pid()}).
 start(Nodename, [Head | _Tail] = Options) when is_tuple(Head) ->
 	gen_server:start({local, ?MODULE}, ?MODULE, [Nodename, Options], []).
-	
-%% @doc Start the media manager linked to the parant process with C node `node() Nodemane' 
+
+%% @doc Start the media manager linked to the parant process with C node `node() Nodemane'
 %% and `[{atom(), term()] Options'.
 %% <ul>
 %% <li>`domain :: string()'</li>
@@ -262,7 +262,7 @@ start_link(Nodename, [Head | _Tail] = Options) when is_tuple(Head) ->
 
 %% @doc returns {`ok', pid()} if there is a freeswitch media process handling the given `UUID'.
 -spec(get_handler/1 :: (UUID :: string()) -> {'ok', pid()} | 'noexists').
-get_handler(UUID) -> 
+get_handler(UUID) ->
 	gen_server:call(?MODULE, {get_handler, UUID}).
 
 -spec(notify/2 :: (UUID :: string(), Pid :: pid()) -> 'ok').
@@ -300,7 +300,7 @@ ring_agent(AgentPid, Agent, Call, Timeout) ->
 	gen_server:call(?MODULE, {ring_agent, AgentPid, Agent, Call, Timeout}).
 
 % @doc This functions primary use is to create a persistent ring channel to
-% the agent; ie:  off hook agent.  `Opts' is the same as what 
+% the agent; ie:  off hook agent.  `Opts' is the same as what
 % {@link freeswitch_ring:start/5} takes.
 % @see freeswitch_ring:start/5
 -spec(ring_agent/3 :: (Apid :: pid(), Agent :: #agent{}, Opts :: [any()]) -> {'ok', pid()} | {'error', any()}).
@@ -362,7 +362,7 @@ get_node() ->
 %% gen_server callbacks
 %%====================================================================
 %% @private
-init([Nodename, Options]) -> 
+init([Nodename, Options]) ->
 	?DEBUG("starting...", []),
 	process_flag(trap_exit, true),
 	DialString = proplists:get_value(dialstring, Options, ""),
@@ -444,9 +444,9 @@ handle_call({record_outage, _Client, _AgentPid, _AgentRec}, _From, State) -> % f
 	{reply, {error, noconnection}, State};
 handle_call({get_handler, UUID}, _From, #state{call_dict = Dict} = State) ->
 	case dict:find(UUID, Dict) of
-		error -> 
+		error ->
 			{reply, noexists, State};
-		{ok, Pid} -> 
+		{ok, Pid} ->
 			{reply, Pid, State}
 	end;
 handle_call(stop, _From, State) ->
@@ -669,7 +669,7 @@ handle_info({get_pid, UUID, Ref, From}, #state{call_dict = Dict} = State) ->
 			{noreply, State};
 		error ->
 			case freeswitch_media:start(State#state.nodename, State#state.dialstring, UUID) of
-				{ok, Pid} -> 
+				{ok, Pid} ->
 					From ! {Ref, Pid},
 					link(Pid),
 					{noreply, State#state{call_dict = dict:store(UUID, Pid, Dict)}};
@@ -695,7 +695,7 @@ handle_info({'EXIT', Pid, _Reason}, #state{xmlserver = Pid} = State) ->
 	{noreply, State#state{xmlserver = undefined}};
 handle_info({'EXIT', Pid, Reason}, #state{call_dict = Dict} = State) ->
 	?NOTICE("trapped exit of ~p, doing clean up for ~p", [Reason, Pid]),
-	F = fun(Key, Value, Acc) -> 
+	F = fun(Key, Value, Acc) ->
 		case Value of
 			Pid ->
 				% TODO - We might be able to do more than just terminate the cdr
@@ -783,9 +783,9 @@ start_listener(Nodename) ->
 					ok ->
 						Self ! {register_event_handler, {ok, self()}},
 						listener(Nodename);
-					{error, Reason} -> 
+					{error, Reason} ->
 						Self ! {register_event_handler, {error, Reason}}
-				after ?TIMEOUT -> 
+				after ?TIMEOUT ->
 						Self ! {register_event_handler, timeout}
 				end
 		end).
@@ -804,9 +804,9 @@ listener(Node) ->
 					ok
 			end,
 			listener(Node);
-		{nodedown, Node} -> 
+		{nodedown, Node} ->
 			gen_server:cast(?MODULE, nodedown);
-		 Otherwise -> 
+		 Otherwise ->
 			 ?INFO("Uncertain reply received by the fmm listener:  ~p", [Otherwise]),
 			 listener(Node)
 	end.

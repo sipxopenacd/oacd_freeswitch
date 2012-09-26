@@ -14,7 +14,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson and Micah Warren.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -91,7 +91,7 @@ handle_cast({agent_state, oncall, #call{type = voice}}, _FsRef, State) ->
 handle_cast({agent_state, AState, _Data}, FsInfo, State) ->
 	handle_cast({agent_state, AState}, FsInfo, State);
 handle_cast({agent_state, _AState}, {Fsnode, UUID}, State) ->
-	freeswitch:bgapi(Fsnode, uuid_transfer, UUID ++ " 'park' inline", fun(_, _) -> 
+	freeswitch:bgapi(Fsnode, uuid_transfer, UUID ++ " 'park' inline", fun(_, _) ->
 		?INFO("machine goes bing!", []),
 	ok end),
 	{noreply, State};

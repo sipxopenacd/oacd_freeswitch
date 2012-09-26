@@ -217,7 +217,7 @@ fetch_sip_auth(ID,Data,{Node,_,sip_auth}) ->
 	Realm = proplists:get_value("sip_auth_realm", Data),
 	% TODO Can this be done w/o dealing w/ a plain text pw?
 	case ets:lookup(?ets, User) of
-		[] -> 
+		[] ->
 			?DEBUG("Sip auth ~s@~s for relam ~s is not found",[User,Domain,Realm]),
 			freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE);
 		[{User,Hashes}] ->

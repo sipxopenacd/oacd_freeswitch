@@ -14,7 +14,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson and Micah Warren.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -62,8 +62,8 @@
 	handle_agent_transfer/4,
 	handle_queue_transfer/5,
 	handle_wrapup/5,
-	handle_call/6, 
-	handle_cast/5, 
+	handle_call/6,
+	handle_cast/5,
 	handle_info/5,
 	handle_warm_transfer_begin/3,
 	terminate/5,
@@ -111,7 +111,7 @@ get_call(MPid) ->
 -spec(dump_state/1 :: (Mpid :: pid()) -> #state{}).
 dump_state(Mpid) when is_pid(Mpid) ->
 	gen_media:call(Mpid, dump_state).
-	
+
 %%====================================================================
 %% gen_media callbacks
 %%====================================================================
@@ -248,7 +248,7 @@ handle_warm_transfer_begin(_Number, _Call, State) ->
 handle_wrapup(_From, _Statename, _Call, _GenMediaState, State) ->
 	% TODO figure out what to do if anything.  If nothing, remove todo.
 	{ok, State}.
-	
+
 handle_queue_transfer(_Queue, _Statename, _Call, _GenMediaState, #state{ringchannel = Channel} = State) when is_pid(Channel) ->
 	freeswitch_ring:hangup(Channel),
 	{ok, State#state{ringchannel = undefined, xferchannel=undefined, xferuuid=undefined, answered = false}};

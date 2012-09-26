@@ -14,7 +14,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson and Micah Warren.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -27,7 +27,7 @@
 %%	Micah Warren <micahw at lordnull dot com>
 %%
 
-%% @doc Helper behaviour for having freeswitch ring endpoints, be they 
+%% @doc Helper behaviour for having freeswitch ring endpoints, be they
 %% agent or arbitrary data.  Much like gen_media, this wraps a gen_server
 %% giving the callback module some extra info for the callback functions, as
 %% well as adding another:  handle_event.
@@ -43,8 +43,8 @@
 %%					Opts = [string()]
 %%					State = Reason = any()
 %%
-%% 		Before the originate is done this function is called.  Args is the 
-%%		list of options sent to freeswitch_ring unaltered.  Freeswitch Ring 
+%% 		Before the originate is done this function is called.  Args is the
+%%		list of options sent to freeswitch_ring unaltered.  Freeswitch Ring
 %%		does not remove options it doesn't understand.  The `Opts' returned
 %% 		is a list of strings used for the dial options in the originate.
 %%
@@ -77,9 +77,9 @@
 %%				Result = {noreply, State} | {stop, Reason, State}
 %%				Reason = any()
 %%
-%%		freeswitch_ring subscribes to channel_answer, channel_bridge, 
+%%		freeswitch_ring subscribes to channel_answer, channel_bridge,
 %%		channel_unbridge, and channel_hangup automatically.  Other events
-%%		can be subscribed to using the 'events' option.  Returns are the 
+%%		can be subscribed to using the 'events' option.  Returns are the
 %%		same as gen_server:handle_info.
 
 -module(freeswitch_ring).
@@ -113,11 +113,11 @@
 
 %% gen_server callbacks
 -export([
-	init/1, 
-	handle_call/3, 
-	handle_cast/2, 
+	init/1,
+	handle_call/3,
+	handle_cast/2,
 	handle_info/2,
-	terminate/2, 
+	terminate/2,
 	code_change/3 %,
 	%format_status/2
 ]).
@@ -159,7 +159,7 @@
 -type(destination_opt() :: {'destination', string()}).
 -type(dnis_opt() :: {'dnis', string()}).
 -type(no_oncall_on_bridge_opt() :: 'no_oncall_on_bridge').
--type(start_opt() :: 
+-type(start_opt() ::
 	call_opt() |
 	caller_id_opt() |
 	ringout_opt() |
@@ -174,7 +174,7 @@
 
 -type(uuid() :: string()).
 -type(fs_refs() :: {atom(), uuid()}).
--type(callback_fun() :: 
+-type(callback_fun() ::
 	{'init', fun((fs_refs(), [any()]) -> {'ok', any()})} |
 	{'handle_event', fun((string(), [{string(), string()}], fs_refs(), any()) -> any())} |
 	{'handle_call', fun((any(), {pid(), reference()}, fs_refs(), any()) -> any())} |
@@ -202,9 +202,9 @@ start_link(Agent, _Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, 
 	NewOptions = [{call, Call} | Options],
 	gen_server:start_link(?MODULE, [Fsnode, Callbacks, NewOptions], []).
 
-%% @doc Used by erlang to detmine if a module implementing this behavor is 
+%% @doc Used by erlang to detmine if a module implementing this behavor is
 %% valid.
--spec(behaviour_info/1 :: 
+-spec(behaviour_info/1 ::
 	(Info :: 'callbacks' | any()) -> [{atom(), non_neg_integer()}] | 'undefined').
 behaviour_info(callbacks) ->
 	[{init, 2},
@@ -345,7 +345,7 @@ init([Fsnode, #callbacks{init = InitFun} = Callbacks, Options]) ->
 								_Else ->
 									?DEBUG("starting for ~p", [UUID]),
 										{ok, #state{
-											cnode = Fsnode, 
+											cnode = Fsnode,
 											uuid = UUID,
 											options = Options,
 											callbacks = Callbacks#callbacks{state = CallbackState}

@@ -14,7 +14,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson and Micah Warren.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -27,7 +27,7 @@
 %%	Micah Warren <micahw at lordnull dot com>
 %%
 
-%% @doc The gen_media callback module for voice calls through freeswitch.  
+%% @doc The gen_media callback module for voice calls through freeswitch.
 %% @see freeswitch_media_manager
 
 -module(freeswitch_media).
@@ -81,7 +81,7 @@
 	handle_queue_transfer/5,
 	handle_wrapup/5,
 	handle_call/6,
-	handle_cast/5, 
+	handle_cast/5,
 	handle_info/5,
 	terminate/5,
 	code_change/4]).
@@ -96,7 +96,7 @@
 	'hold_conference' | % has a conference, but agent (self) not a member
 	'hold_conference_3rdparty' | % a conference is up, as is a call to a
 		% 3rd party, but agent is member of neither
-	'in_conference_3rdparty' | % agent is a member of the conference, 
+	'in_conference_3rdparty' | % agent is a member of the conference,
 		% but there is a 3rd party in limbo.
 	'3rd_party' | % there is a conference, but agent is talking w/ 3rd party.
 	'in_conference' | % agent is a member of the conference, no limbo party
@@ -176,7 +176,7 @@ dump_state(Mpid) when is_pid(Mpid) ->
 '3rd_party_pickup'(Mpid) ->
 	Self = self(),
 	gen_media:cast(Mpid, {'3rd_party_pickup', Self}).
-	
+
 %%====================================================================
 %% gen_media callbacks
 %%====================================================================
@@ -470,10 +470,10 @@ handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = on
 	{noreply, State#state{statename = oncall}};
 
 handle_cast({contact_3rd_party, _Args} = Cast, Statename, Call, GenMediaState, #state{statename = oncall_hold, cnode = Fnode} = State) ->
-	% first step is to move to hold_conference state, which means 
+	% first step is to move to hold_conference state, which means
 	% creating the conference.
 	{ok, ConfId} = freeswitch:api(Fnode, create_uuid),
-	case freeswitch:api(Fnode, uuid_transfer, Call#call.id ++ " conference:" ++ 
+	case freeswitch:api(Fnode, uuid_transfer, Call#call.id ++ " conference:" ++
 		ConfId ++ " inline") of
 		{ok, Res} ->
 			?INFO("Success result creating conferance and transfering call to it:  ~p", [Res]),
@@ -490,7 +490,7 @@ handle_cast({contact_3rd_party, Destination}, _Statename, Call, _GenMediaState, 
 	% start a ring chan to 3rd party
 	% play a ringing sound to agent to be nice
 	% on any error, we just kill the playback
-	% otherwise if the 3rd party picks up, we send a message here to move 
+	% otherwise if the 3rd party picks up, we send a message here to move
 	% to the new state.
 	#call{client = Client} = Call,
 	#client{options = ClientOpts} = Client,
@@ -746,7 +746,7 @@ handle_cast({'3rd_party_pickup', ChanPid}, _Statename, Call, _GenMediaState, #st
 	#state{cnode = Fnode, '3rd_party_id' = OtherParty, ringuuid = AgentChan} = State,
 	freeswitch:bgapi(Fnode, uuid_bridge, OtherParty ++ " " ++ AgentChan),
 	{noreply, State#state{statename = '3rd_party'}};
-	
+
 handle_cast({set_caseid, CaseID}, _Statename, Call, _GenMediaState, State) ->
 	?INFO("setting caseid for ~p to ~p", [Call#call.id, CaseID]),
 	{noreply, State#state{caseid = CaseID}};
@@ -770,7 +770,7 @@ handle_info(check_recovery, _StateName, Call, _Internal, State) ->
 			{noreply, State#state{manager_pid = Tref}}
 	end;
 
-handle_info({'EXIT', Pid, Reason}, StateName, Call, _Internal, 
+handle_info({'EXIT', Pid, Reason}, StateName, Call, _Internal,
 		#state{ringchannel = Pid} = State) when StateName =:= oncall_ringing;
 		StateName =:= inqueue_ringing ->
 	?WARNING("Handling ring channel ~w exit ~p for ~p", [Pid, Reason, Call#call.id]),
@@ -920,7 +920,7 @@ case_event_name([UUID | Rawcall], Callrec, State) ->
 	case_event_name(Ename, UUID, Rawcall, Callrec, State).
 
 %% @private
-case_event_name({"CUSTOM", "conference::maintenance"}, UUID, _Rawcall, Callrec, #state{statename = Statename, '3rd_party_id' = UUID} = State) when 
+case_event_name({"CUSTOM", "conference::maintenance"}, UUID, _Rawcall, Callrec, #state{statename = Statename, '3rd_party_id' = UUID} = State) when
 	Statename =:= 'in_conference'; Statename =:= 'hold_conference' ->
 		?INFO("finishing up a 3rd paryt merge",[]),
 		case Statename of
@@ -966,7 +966,7 @@ case_event_name("CHANNEL_PARK", Thirdy, Rawcall, Callrec, #state{
 	freeswitch:api(Fnode, uuid_transfer, Ringid ++ " 'conference:" ++ Confid ++ "' inline"),
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
 	{{mediapush, 'in_conference_3rdparty'}, State};
-	
+
 case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{statename = hold_conference_3rdparty, '3rd_party_id' = UUID} = State) ->
 	?DEBUG("park of the 3rd party, proll a hold", []),
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
@@ -1011,10 +1011,10 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 		MohMusak ->
 			MohMusak
 	end,
-	Priority = get_rawcall_int("variable_queue_priority", 
+	Priority = get_rawcall_int("variable_queue_priority",
 		Rawcall, ?DEFAULT_PRIORITY),
 
-	VMPriorityDiff = 
+	VMPriorityDiff =
 		case get_rawcall_int("variable_vm_priority_diff",
 				Rawcall, undefined) of
 			undefined ->
@@ -1037,7 +1037,7 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 				Acc
 		end
 	end, [], util:string_split(SkillList, ",")),
-	
+
 	{Calleridname, Calleridnum} = get_caller_id(Rawcall),
 	Doanswer = proplists:get_value("variable_erlang_answer", Rawcall, true),
 	NewCall = Callrec#call{client=Client, callerid={Calleridname, Calleridnum}, priority = Priority, skills = Skills},

@@ -10,7 +10,7 @@
 %%
 %%	The Original Code is OpenACD.
 %%
-%%	The Initial Developers of the Original Code is 
+%%	The Initial Developers of the Original Code is
 %%	Andrew Thompson.
 %%
 %%	All portions of the code written by the Initial Developers are Copyright
@@ -49,7 +49,7 @@
 -ifdef(TEST).
 	-include_lib("eunit/include/eunit.hrl").
 	-define(URL_POPS, [
-		{"test 1", "http://www.example.com"}, 
+		{"test 1", "http://www.example.com"},
 		{"test 2", "http://subdomain.example.com"}
 	]).
 	-include_lib("oacd_core/include/agent.hrl").
@@ -188,7 +188,7 @@ grab_agent([{_, {Pid, _ID, _Skills} = Agent} | Agents], Call) ->
 		_ ->
 			grab_agent(Agents, Call)
 	end.
-	
+
 
 reserve_agent(State) ->
 	Call = #call{id = State#state.uuid, source = self(), client = State#state.client, skills = State#state.skills, direction = outbound},
@@ -267,5 +267,5 @@ url_pop(Agent, Args, [{Window, Url} | Tail]) ->
 % 	gen_server_mock:expect_cast(Aconn, fun({url_pop,"http://subdomain.example.com","test 2"}, _) -> ok end),
 % 	url_pop(Apid, []),
 % 	gen_server_mock:assert_expectations(Aconn).
-	
+
 -endif.
