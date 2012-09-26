@@ -8,16 +8,21 @@ start_link(FsNode, Args) ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, {FsNode, Args}).
 
 init({FsNode, Args}) ->
-	MFA = {freeswitch_media_manager, start_link, [FsNode, Args]},
-	Kid = {freeswitch_media_manager, MFA, permanent, 1000, worker, [freeswitch_media_manager]},
+	Children = case application:get_env(cpx_managed) of
+		true ->
+			[];
+		_ ->
+			MFA1 = {freeswitch_media_manager, start_link, [FsNode, Args]},
+			Kid1 = {freeswitch_media_manager, MFA1, permanent, 1000, worker, [freeswitch_media_manager]},
 
-	SipAuth = case proplists:get_bool(sipauth,Args) of
-		sipauth -> sip_auth;
-		true -> sip_auth;
-		_ -> no_sip_auth
+			SipAuth = case proplists:get_bool(sipauth,Args) of
+				sipauth -> sip_auth;
+				true -> sip_auth;
+				_ -> no_sip_auth
+			end,
+			Realms = proplists:get_value(realms,Args,[]),
+			MFA2 = {freeswitch_fetch_handler, start_link, [FsNode,Args,SipAuth,Realms]},
+			Kid2 = {freeswitch_fetch_handler, MFA2, permanent, 1000, worker, [freeswitch_fetch_handler]},
+			[Kid1, Kid2]
 	end,
-	Realms = proplists:get_value(realms,Args,[]),
-	MFA2 = {freeswitch_fetch_handler, start_link, [FsNode,Args,SipAuth,Realms]},
-	Kid2 = {freeswitch_fetch_handler, MFA2, permanent, 1000, worker, [freeswitch_fetch_handler]},
-
-	{ok, {{one_for_one, 5, 10}, [Kid,Kid2]}}.
+	{ok, {{one_for_one, 5, 10}, Children}}.
