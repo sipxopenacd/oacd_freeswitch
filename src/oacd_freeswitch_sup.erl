@@ -9,7 +9,7 @@ start_link(FsNode, Args) ->
 
 init({FsNode, Args}) ->
 	Children = case application:get_env(cpx_managed) of
-		true ->
+		{ok, true} ->
 			[];
 		_ ->
 			MFA1 = {freeswitch_media_manager, start_link, [FsNode, Args]},
