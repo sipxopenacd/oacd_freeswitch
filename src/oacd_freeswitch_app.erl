@@ -1,7 +1,7 @@
 -module(oacd_freeswitch_app).
 -behavior(application).
 
--include_lib("oacd_core/include/log.hrl").
+-include_lib("openacd/include/log.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

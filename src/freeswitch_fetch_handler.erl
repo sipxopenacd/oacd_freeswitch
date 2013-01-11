@@ -5,7 +5,7 @@
 -module(freeswitch_fetch_handler).
 -behavior(gen_server).
 
--include_lib("oacd_core/include/log.hrl").
+-include_lib("openacd/include/log.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

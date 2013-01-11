@@ -44,15 +44,15 @@
 		start_fg/6
 	]).
 
--include_lib("oacd_core/include/log.hrl").
--include_lib("oacd_core/include/call.hrl").
+-include_lib("openacd/include/log.hrl").
+-include_lib("openacd/include/call.hrl").
 -ifdef(TEST).
 	-include_lib("eunit/include/eunit.hrl").
 	-define(URL_POPS, [
 		{"test 1", "http://www.example.com"},
 		{"test 2", "http://subdomain.example.com"}
 	]).
-	-include_lib("oacd_core/include/agent.hrl").
+	-include_lib("openacd/include/agent.hrl").
 -else.
 	-define(URL_POPS, [
 		{"test 1", "http://subdomain.example.com?ivroption=#{ivroption}&callid=#{callid}"},
@@ -76,7 +76,7 @@
 
 -type(state() :: #state{}).
 -define(GEN_SERVER, true).
--include_lib("oacd_core/include/gen_spec.hrl").
+-include_lib("openacd/include/gen_spec.hrl").
 
 -spec(start/6 :: (Node :: atom(), Number :: string(), Exten :: string(), Skills :: skill_list(), Client :: string(), Vars :: [any()]) -> {'ok', pid()}).
 start(Node, Number, Exten, Skills, Client, Vars) ->

@@ -91,10 +91,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("oacd_core/include/log.hrl").
--include_lib("oacd_core/include/queue.hrl").
--include_lib("oacd_core/include/call.hrl").
--include_lib("oacd_core/include/agent.hrl").
+-include_lib("openacd/include/log.hrl").
+-include_lib("openacd/include/queue.hrl").
+-include_lib("openacd/include/call.hrl").
+-include_lib("openacd/include/agent.hrl").
 
 %% API
 -export([
@@ -142,7 +142,7 @@
 
 -type(state() :: #state{}).
 -define(GEN_SERVER, true).
--include_lib("oacd_core/include/gen_spec.hrl").
+-include_lib("openacd/include/gen_spec.hrl").
 
 %%====================================================================
 %% API
