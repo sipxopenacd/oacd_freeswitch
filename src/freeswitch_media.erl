@@ -1145,7 +1145,7 @@ get_client_options(Proplist) ->
 	VarValues = [proplists:get_value(N, Proplist, "null") || N <- VarNames,
 		proplists:get_value(N, Proplist) =/= undefined],
 	VarValues1 = lists:map(fun(Elem) ->
-		try mochijson2:decode(Elem) of
+		try ejrpc2_json:decode(Elem) of
 			null -> undefined;
 			Else when is_binary(Else) -> Else;
 			{struct, Else} -> Else;
