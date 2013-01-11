@@ -46,26 +46,25 @@
 
 -include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/call.hrl").
+-include_lib("openacd/include/agent.hrl").
 -ifdef(TEST).
 	-include_lib("eunit/include/eunit.hrl").
 	-define(URL_POPS, [
 		{"test 1", "http://www.example.com"},
 		{"test 2", "http://subdomain.example.com"}
 	]).
-	-include_lib("openacd/include/agent.hrl").
 -else.
 	-define(URL_POPS, [
 		{"test 1", "http://subdomain.example.com?ivroption=#{ivroption}&callid=#{callid}"},
 		{"test 2", "http://subdomain2.example.com?number=#{number}&clientid=#{clientid}"}
 	]).
-	-type(skill_list() :: [atom() | {atom(), any()}]).
 -endif.
 
 -record(state, {
 		cnode :: atom(),
 		number :: string(),
 		exten :: string(),
-		skills :: skill_list(),
+		skills :: skills(),
 		client :: #client{},
 		vars :: [any()],
 		uuid :: string(),
@@ -78,11 +77,11 @@
 -define(GEN_SERVER, true).
 -include_lib("openacd/include/gen_spec.hrl").
 
--spec(start/6 :: (Node :: atom(), Number :: string(), Exten :: string(), Skills :: skill_list(), Client :: string(), Vars :: [any()]) -> {'ok', pid()}).
+-spec(start/6 :: (Node :: atom(), Number :: string(), Exten :: string(), Skills :: skills(), Client :: string(), Vars :: [any()]) -> {'ok', pid()}).
 start(Node, Number, Exten, Skills, Client, Vars) ->
 	gen_server:start(?MODULE, [Node, Number, Exten, Skills, Client, Vars, false], []).
 
--spec(start_fg/6 :: (Node :: atom(), Number :: string(), Exten :: string(), Skills :: skill_list(), Client :: string(), Vars :: [any()]) -> {'ok', pid()}).
+-spec(start_fg/6 :: (Node :: atom(), Number :: string(), Exten :: string(), Skills :: skills(), Client :: string(), Vars :: [any()]) -> {'ok', pid()}).
 start_fg(Node, Number, Exten, Skills, Client, Vars) ->
 	case gen_server:start(?MODULE, [Node, Number, Exten, Skills, Client, Vars, self()], []) of
 		{ok, _Pid} ->
