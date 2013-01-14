@@ -1,4 +1,6 @@
 language: erlang
+before_script:
+  - git clone https://github.com/sipxopenacd/openacd.git deps/openacd
 notifications:
   email: false
 otp_release:
