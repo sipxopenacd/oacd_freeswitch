@@ -1,7 +1,6 @@
 language: erlang
-before_script:
-  - pwd
-  - ls
+before_install:
+  - export REBAR_DEPS_DIR=deps
   - git clone https://github.com/sipxopenacd/openacd.git deps/openacd
 notifications:
   email: false
