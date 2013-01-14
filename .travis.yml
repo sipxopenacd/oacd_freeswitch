@@ -1,5 +1,7 @@
 language: erlang
 before_script:
+  - pwd
+  - ls
   - git clone https://github.com/sipxopenacd/openacd.git deps/openacd
 notifications:
   email: false
