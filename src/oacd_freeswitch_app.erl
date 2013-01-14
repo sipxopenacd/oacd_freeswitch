@@ -1,7 +1,6 @@
 -module(oacd_freeswitch_app).
 -behavior(application).
 
--include_lib("openacd/include/log.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -14,6 +13,7 @@
 %% ==================================================
 
 start(_Type, Args) ->
+	application:start(lager),
 	DefaultFsNode = case application:get_env(oacd_freeswitch, freeswitch_node) of
 		{ok, N} -> N;
 		_ -> undefined

@@ -5,7 +5,6 @@
 -module(freeswitch_fetch_handler).
 -behavior(gen_server).
 
--include_lib("openacd/include/log.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -124,7 +123,7 @@ init({Freeswitch,Dialstrings,SipAuth,Realms}) ->
 	Seed = [Localhost, FsHost | Realms],
 	IpStrings = lists:foldl(IfsToIpStrings,Seed,Ifs),
 	set_hook(IpStrings),
-	?INFO("Started; relams:  ~p",[IpStrings]),
+	lager:info("Started; relams:  ~p",[IpStrings]),
 	{ok, {Freeswitch,Dialstrings,SipAuth}}.
 
 %% ----------------------------------------------------------------------
@@ -146,7 +145,7 @@ handle_cast(_Msg,State) ->
 %% ----------------------------------------------------------------------
 
 handle_info({fetch, directory, "domain", "name", _Value, Id, [undefined | Data]}, State) ->
-	%?DEBUG("The data:  ~p", [Data]),
+	%lager:debug("The data:  ~p", [Data]),
 	case proplists:get_value("as_channel", Data) of
 		"true" ->
 			fetch_as_channel(Id,Data,State);
@@ -188,7 +187,7 @@ code_change(_Old,State,_Extra) ->
 %% ======================================================================
 
 fetch_user_lookup(Id,_Data,{Node,_,no_sip_auth}) ->
-	?DEBUG("Lookup when not doing sip auth, empty response",[]),
+	lager:debug("Lookup when not doing sip auth, empty response",[]),
 	% I guess we're just looking up a user?
 	% Looking up for first part of an auth most likely.
 	% only auth we support is sip (which is above) so we'll
@@ -200,7 +199,7 @@ fetch_user_lookup(ID,Data,{Node,_,_}) ->
 	Domain = proplists:get_value("domain", Data),
 	case agent_manager:query_agent(User) of
 		{true, _Pid} ->
-			?DEBUG("Lookup succeeded for user ~s@~s", [User,Domain]),
+			lager:debug("Lookup succeeded for user ~s@~s", [User,Domain]),
 			freeswitch:fetch_reply(Node, ID, lists:flatten(io_lib:format(?USERRESPONSE, [Domain, User])));
 		false ->
 			freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE)
@@ -208,7 +207,7 @@ fetch_user_lookup(ID,Data,{Node,_,_}) ->
 
 fetch_sip_auth(ID,_Data,{Node,_,no_sip_auth}) ->
 	%% not doing sip auth, return nothing
-	?DEBUG("Not doing SIP auth", []),
+	lager:debug("Not doing SIP auth", []),
 	freeswitch:fetch_reply(Node, ID, "");
 
 fetch_sip_auth(ID,Data,{Node,_,sip_auth}) ->
@@ -218,15 +217,15 @@ fetch_sip_auth(ID,Data,{Node,_,sip_auth}) ->
 	% TODO Can this be done w/o dealing w/ a plain text pw?
 	case ets:lookup(?ets, User) of
 		[] ->
-			?DEBUG("Sip auth ~s@~s for relam ~s is not found",[User,Domain,Realm]),
+			lager:debug("Sip auth ~s@~s for relam ~s is not found",[User,Domain,Realm]),
 			freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE);
 		[{User,Hashes}] ->
 			case proplists:get_value(Realm,Hashes) of
 				undefined ->
-					?DEBUG("Sip auth ~s@~s for relam ~s has no hash",[User,Domain,Realm]),
+					lager:debug("Sip auth ~s@~s for relam ~s has no hash",[User,Domain,Realm]),
 					freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE);
 				Hash ->
-					?DEBUG("Sip auth ~s@~s for relam ~s found hash ~s",[User,Domain,Realm,Hash]),
+					lager:debug("Sip auth ~s@~s for relam ~s found hash ~s",[User,Domain,Realm,Hash]),
 					freeswitch:fetch_reply(Node, ID, lists:flatten(io_lib:format(?REGISTERRESPONSE,[Domain,User,Hash])))
 			end
 	end.
@@ -258,7 +257,7 @@ fetch_as_channel(ID,Data,{Node,State,_}) ->
 						{rtmp,D} ->
 							freeswitch_media_manager:do_dial_string(proplists:get_value(rtmp, State, "rtmp/$1"), D, [])
 					end,
-					?NOTICE("returning ~s for user directory entry ~s", [DialString, User]),
+					lager:notice("returning ~s for user directory entry ~s", [DialString, User]),
 					freeswitch:fetch_reply(Node, ID, lists:flatten(io_lib:format(?DIALUSERRESPONSE, [Domain, User, DialString])))
 			catch
 				_:_ -> % agent pid is toast?

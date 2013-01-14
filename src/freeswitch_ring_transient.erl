@@ -31,7 +31,6 @@
 
 -module(freeswitch_ring_transient).
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
 
@@ -128,15 +127,15 @@ handle_event("CHANNEL_ANSWER", _Data, {FSNode, _UUID}, #state{call = #call{type 
 		try gen_media:oncall(Call#call.source) of
 			invalid ->
 				freeswitch:api(FSNode, uuid_park, Call#call.id),
-				?DEBUG("Death due to invalid oncall request", []),
+				lager:debug("Death due to invalid oncall request", []),
 				Self ! {stop, normal};
 			ok ->
 				ok
 		catch
 			exit:{noproc, _} ->
-				?WARNING("~p died before I could complete the bridge", [Call#call.source]),
+				lager:warning("~p died before I could complete the bridge", [Call#call.source]),
 				freeswitch:api(FSNode, uuid_park, Call#call.id),
-				?DEBUG("Death due to noproc error on oncall attempt", []),
+				lager:debug("Death due to noproc error on oncall attempt", []),
 				Self ! {stop, normal}
 		end
 	end,
@@ -149,12 +148,12 @@ handle_event("CHANNEL_ANSWER", _Data, {FsNode, UUID}, #state{call = Call} = Stat
 			{noreply, State};
 		ok ->
 			freeswitch:api(FsNode, uuid_kill, UUID),
-			?DEBUG("Death due to non-voice call answered", []),
+			lager:debug("Death due to non-voice call answered", []),
 			{stop, normal, State}
 	catch
 		exit:{noproc, _} ->
 			freeswitch:api(FsNode, uuid_kill, UUID),
-			?DEBUG("Death due to noproc error setting non-voice call oncall", []),
+			lager:debug("Death due to noproc error setting non-voice call oncall", []),
 			{stop, normal, State}
 	end;
 handle_event("CHANNEL_BRIDGE", _Data, _FsRef, #state{no_oncall_on_bridge = true} = State) ->
@@ -163,23 +162,23 @@ handle_event("CHANNEL_BRIDGE", _Data, {Fsnode, _UUID}, #state{call = #call{type 
 	try gen_media:oncall(Call#call.source) of
 		invalid ->
 			freeswitch:api(Fsnode, uuid_park, Call#call.id),
-			?DEBUG("Death due to invalid oncall request after bridge", []),
+			lager:debug("Death due to invalid oncall request after bridge", []),
 			{stop, normal, State};
 		ok ->
 			{noreply, State}
 	catch
 		exit:{noproc, _} ->
-			?WARNING("~p died before I could complete the bridge, I die with it", [Call#call.source]),
+			lager:warning("~p died before I could complete the bridge, I die with it", [Call#call.source]),
 			freeswitch:api(Fsnode, uuid_park, Call#call.id),
 			{stop, normal, State}
 	end;
 
 handle_event("CHANNEL_HANGUP", _Data, _Fsref, State) ->
-	?WARNING("Hangup event, stopping", []),
+	lager:warning("Hangup event, stopping", []),
 	{stop, normal, State};
 
 handle_event(Event, _, _, State) ->
-	?DEBUG("Ignoring event ~p", [Event]),
+	lager:debug("Ignoring event ~p", [Event]),
 	{noreply, State}.
 
 %% =====
@@ -187,7 +186,7 @@ handle_event(Event, _, _, State) ->
 %% =====
 
 terminate(Reason, _Fsref, _State) ->
-	?NOTICE("Going down:  ~p", [Reason]),
+	lager:notice("Going down:  ~p", [Reason]),
 	ok.
 
 %% =====

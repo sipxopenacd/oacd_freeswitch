@@ -35,7 +35,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/queue.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
@@ -122,12 +121,12 @@ init([Cnode, UUID, File, Queue, Priority, Client]) ->
 	Callrec = #call{id=UUID++"-vm", type=voice, source=self(), priority = Priority, client = Client, media_path = inband},
 	case cpx_supervisor:get_archive_path(Callrec) of
 		none ->
-			?DEBUG("archiving is not configured", []);
+			lager:debug("archiving is not configured", []);
 		{error, _Reason, Path} ->
-			?WARNING("Unable to create requested call archiving directory for recording ~p", [Path]);
+			lager:warning("Unable to create requested call archiving directory for recording ~p", [Path]);
 		Path ->
 			Ext = filename:extension(File),
-			?DEBUG("archiving to ~s~s", [Path, Ext]),
+			lager:debug("archiving to ~s~s", [Path, Ext]),
 			file:copy(File, Path++Ext)
 	end,
 	{ok, {#state{cnode=Cnode, manager_pid = Manager, file=File}, {Queue, Callrec}}}.
@@ -139,7 +138,7 @@ handle_answer(Apid, oncall_ringing, Callrec, _GenMediaState, #state{file=File, x
 	link(XferChannel),
 	%freeswitch_ring:hangup(State#state.ringchannel),
 	agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
-	?NOTICE("Voicemail ~s successfully transferred! Time to play ~s", [Callrec#call.id, File]),
+	lager:notice("Voicemail ~s successfully transferred! Time to play ~s", [Callrec#call.id, File]),
 	freeswitch:sendmsg(State#state.cnode, State#state.xferuuid,
 		[{"call-command", "execute"},
 			{"event-lock", "true"},
@@ -154,7 +153,7 @@ handle_answer(Apid, oncall_ringing, Callrec, _GenMediaState, #state{file=File, x
 			ringuuid = State#state.xferuuid, xferuuid = undefined, xferchannel = undefined, answered = true}};
 
 handle_answer(Apid, inqueue_ringing, Callrec, _GenMediaState, #state{file=File} = State) ->
-	?NOTICE("Voicemail ~s successfully answered! Time to play ~s", [Callrec#call.id, File]),
+	lager:notice("Voicemail ~s successfully answered! Time to play ~s", [Callrec#call.id, File]),
 	agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
 	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
 		[{"call-command", "execute"},
@@ -172,19 +171,19 @@ handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
 	AgentRec = agent:dump_state(Apid),
 	handle_ring({Apid, AgentRec}, RingData, Callrec, State);
 handle_ring({_Apid, #agent{ring_channel = {undefined, persistent, _}} = Agent}, _RingData, _Callrec, State) ->
-	?WARNING("Agent (~p) does not have it's persistent channel up yet", [Agent#agent.login]),
+	lager:warning("Agent (~p) does not have it's persistent channel up yet", [Agent#agent.login]),
 	{invalid, State};
 
 handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistent, _EndpointType}} = _Agent}, _RingData, _Callrec, State) ->
-	?INFO("Ring channel made things happy, I assume", []),
+	lager:info("Ring channel made things happy, I assume", []),
 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}};
 
 handle_ring({Apid, #agent{ring_channel = {EndpointPid, transient, _EndpintType}} = _Agent}, _RingData, _Callrec, State) when is_pid(EndpointPid) ->
-	?INFO("Agent already has transient ring pid up:  ~p", [EndpointPid]),
+	lager:info("Agent already has transient ring pid up:  ~p", [EndpointPid]),
 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}}.
 
 handle_ring_stop(_Statename, _Callrec, _GenMediaState, State) ->
-	?DEBUG("hanging up ring channel", []),
+	lager:debug("hanging up ring channel", []),
 	case State#state.ringchannel of
 		undefined ->
 			ok;
@@ -194,7 +193,7 @@ handle_ring_stop(_Statename, _Callrec, _GenMediaState, State) ->
 	{ok, State#state{ringchannel=undefined}}.
 
 handle_agent_transfer(AgentPid, Timeout, Call, State) ->
-	?INFO("transfer_agent to ~p for call ~p", [AgentPid, Call#call.id]),
+	lager:info("transfer_agent to ~p for call ~p", [AgentPid, Call#call.id]),
 	AgentRec = agent:dump_state(AgentPid),
 	% fun that returns another fun when passed the UUID of the new channel
 	% (what fun!)
@@ -203,7 +202,7 @@ handle_agent_transfer(AgentPid, Timeout, Call, State) ->
 			% agent picked up?
 			ok;
 		(error, Reply) ->
-			?WARNING("originate failed: ~p", [Reply])
+			lager:warning("originate failed: ~p", [Reply])
 			%agent:set_state(AgentPid, idle)
 		end
 	end,
@@ -224,7 +223,7 @@ handle_agent_transfer(AgentPid, Timeout, Call, State) ->
 					File = State#state.file,
 					case proplists:get_value("Application-Data", Event) of
 						File ->
-							?NOTICE("Finished playing voicemail recording", []);
+							lager:notice("Finished playing voicemail recording", []);
 						_ ->
 							ok
 					end;
@@ -237,7 +236,7 @@ handle_agent_transfer(AgentPid, Timeout, Call, State) ->
 		{ok, Pid} ->
 			{ok, [{"caseid", State#state.caseid}], State#state{agent_pid = AgentPid, xferchannel = Pid, xferuuid = freeswitch_ring:get_uuid(Pid)}};
 		{error, Error} ->
-			?ERROR("error:  ~p", [Error]),
+			lager:error("error:  ~p", [Error]),
 			{error, Error, State}
 	end.
 
@@ -272,7 +271,7 @@ handle_call({set_agent, Agent, Apid}, _From, _, _Call, _, State) ->
 handle_call(dump_state, _From, _, _Call, _, State) ->
 	{reply, State, State};
 handle_call(Msg, _From, _, _Call, _, State) ->
-	?INFO("unhandled mesage ~p", [Msg]),
+	lager:info("unhandled mesage ~p", [Msg]),
 	{reply, ok, State}.
 
 %%--------------------------------------------------------------------
@@ -305,7 +304,7 @@ handle_cast(Request, Statename, Call, Gmstate, State) when is_record(Request, me
 		'REPLAY' ->
 			handle_cast(replay, Statename, Call, Gmstate, State);
 		Else ->
-			?INFO("Invalid request hint:  ~p", [Else]),
+			lager:info("Invalid request hint:  ~p", [Else]),
 			{noreply, State}
 	end;
 
@@ -328,22 +327,22 @@ handle_info(check_recovery, _Statename, Call, _GenMediaState, State) ->
 	end;
 
 handle_info({'EXIT', Pid, Reason}, oncall_ringing, _Call, _GenMediaState, #state{xferchannel = Pid} = State) ->
-	?WARNING("Handling transfer channel ~w exit ~p", [Pid, Reason]),
+	lager:warning("Handling transfer channel ~w exit ~p", [Pid, Reason]),
 	{stop_ring, State#state{ringchannel = undefined}};
 
 handle_info({'EXIT', Pid, Reason}, oncall_ringing, _Call, _GenMediaState, #state{ringchannel = Pid, answered = true, xferchannel = undefined} = State) ->
-	?WARNING("Handling ring channel ~w exit ~p after answered, no transfer", [Pid, Reason]),
+	lager:warning("Handling ring channel ~w exit ~p after answered, no transfer", [Pid, Reason]),
 	{stop, {hangup, "agent"}, State};
 
 handle_info({'EXIT', Pid, Reason}, inqueue_ringing, _Call, _GenMediaState, #state{ringchannel = Pid} = State) ->
-	?WARNING("Handling ring channel ~w exit ~p", [Pid, Reason]),
+	lager:warning("Handling ring channel ~w exit ~p", [Pid, Reason]),
 	% we die w/ the ring channel because we want the agent o be able to
 	% go to wrapup simply by hanging up the phone (at least in the case of
 	% a transient ring channel)
 	{stop_ring, State#state{ringchannel = undefined}};
 
 handle_info({'EXIT', Pid, Reason}, _Statename, _Call, _GenMediaState, #state{manager_pid = Pid} = State) ->
-	?WARNING("Handling manager exit from ~w due to ~p", [Pid, Reason]),
+	lager:warning("Handling manager exit from ~w due to ~p", [Pid, Reason]),
 	{ok, Tref} = timer:send_after(1000, check_recovery),
 	{noreply, State#state{manager_pid = Tref}};
 
@@ -354,7 +353,7 @@ handle_info(call_hangup, _Statename, _Call, _GenMediaState, State) ->
 	{stop, normal, State};
 
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
-	?INFO("unhandled info ~p", [Info]),
+	lager:info("unhandled info ~p", [Info]),
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -363,7 +362,7 @@ handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
 %% @private
 terminate(Reason, _Statename, _Call, _GenMediaState, _State) ->
 	% TODO - delete the recording or archive it somehow
-	?NOTICE("terminating: ~p", [Reason]),
+	lager:notice("terminating: ~p", [Reason]),
 	ok.
 
 %%--------------------------------------------------------------------

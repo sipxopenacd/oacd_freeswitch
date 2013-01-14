@@ -7,7 +7,7 @@
 	]},
 	{mod, {oacd_freeswitch_app, []}},
 	{env, []},
-	{applications, [kernel, stdlib]},
+	{applications, [kernel, stdlib, lager]},
 	{start_phases, []},
 	{included_applications, []}
 ]}.

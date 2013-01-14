@@ -34,7 +34,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/call.hrl").
 
 -ifdef(TEST).
@@ -78,7 +77,7 @@ handle_call({agent_state, ringing, _RingCall}, _From, {Fsnode, UUID}, State) ->
 	freeswitch:bgapi(Fsnode, uuid_transfer, UUID ++ " 'playback:tone_stream://%(2000\\,4000\\,440\\,480);loops=20,park' inline", Callback),
 	{reply, ok, State};
 handle_call(Msg, _From, FsRef, State) ->
-	?WARNING("Unrecognized message ~p (fs:  ~p)", [Msg, FsRef]),
+	lager:warning("Unrecognized message ~p (fs:  ~p)", [Msg, FsRef]),
 	{reply, invalid, State}.
 
 %% =====
@@ -92,11 +91,11 @@ handle_cast({agent_state, AState, _Data}, FsInfo, State) ->
 	handle_cast({agent_state, AState}, FsInfo, State);
 handle_cast({agent_state, _AState}, {Fsnode, UUID}, State) ->
 	freeswitch:bgapi(Fsnode, uuid_transfer, UUID ++ " 'park' inline", fun(_, _) ->
-		?INFO("machine goes bing!", []),
+		lager:info("machine goes bing!", []),
 	ok end),
 	{noreply, State};
 handle_cast(Msg, _FsRef, State) ->
-	?INFO("unhandled cast ~p", [Msg]),
+	lager:info("unhandled cast ~p", [Msg]),
 	{noreply, State}.
 
 %% =====
@@ -111,7 +110,7 @@ handle_info(_Msg, _FsRef, State) ->
 handle_event("CHANNEL_HANGUP", _Data, _FsRef, State) ->
 	{stop, "CHANNEL_HANGUP", State};
 handle_event(_Event, _, _, State) ->
-	%?WARNING("Cannot handle event ~s.", [Event]),
+	%lager:warning("Cannot handle event ~s.", [Event]),
 	{noreply, State}.
 
 %% =====

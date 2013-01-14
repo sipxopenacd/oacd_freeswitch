@@ -109,7 +109,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/queue.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
@@ -364,7 +363,7 @@ get_node() ->
 %%====================================================================
 %% @private
 init([Nodename, Options]) ->
-	?DEBUG("starting...", []),
+	lager:debug("starting...", []),
 	process_flag(trap_exit, true),
 	DialString = proplists:get_value(dialstring, Options, ""),
 	monitor_node(Nodename, true),
@@ -380,7 +379,7 @@ init([Nodename, Options]) ->
 			StrippedOpts = [ X || {Key, _} = X <- Options, Key /= domain],
 			{undefined, undefined, StrippedOpts}
 	end,
-	?INFO("Started for node ~p", [Nodename]),
+	lager:info("Started for node ~p", [Nodename]),
 	{ok, #state{nodename=Nodename, dialstring = DialString, eventserver = Listenpid, xmlserver = DomainPid, freeswitch_up = true, fetch_domain_user = FetchUserOpts}}.
 
 %%--------------------------------------------------------------------
@@ -427,7 +426,7 @@ handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> %
 %					fun(ok, _Reply) ->
 %							freeswitch:api(State#state.nodename, uuid_transfer, UUID ++ " 'gentones:%(500\\,0\\,500),sleep:600,record:/tmp/"++Client++"/problem.wav' inline");
 %						(error, Reply) ->
-%							?WARNING("originate failed: ~p", [Reply]),
+%							lager:warning("originate failed: ~p", [Reply]),
 %							ok
 %					end
 %			end,
@@ -451,7 +450,7 @@ handle_call({get_handler, UUID}, _From, #state{call_dict = Dict} = State) ->
 			{reply, Pid, State}
 	end;
 handle_call(stop, _From, State) ->
-	?NOTICE("Normal termination", []),
+	lager:notice("Normal termination", []),
 	{stop, normal, ok, State};
 handle_call({ring, _Agent, _Call}, _From, #state{freeswitch_up = false} = State) ->
 	{reply, {error, noconnection}, State};
@@ -538,7 +537,7 @@ handle_call({ring_agent, _Apid, _Agent, _Opts}, _From, #state{freeswitch_up = fa
 %			{reply, {error, {badendpointtype, Else}}, State}
 %	end;
 %handle_call({ring_agent, _Apid, #agent{endpointtype = {Pid, _, _}} = Agent, Call, _Timout}, _From, #state{freeswitch_up = true} = State) when is_pid(Pid) ->
-%	?INFO("~s already has a ring channel in ~p", [Agent#agent.login, Pid]),
+%	lager:info("~s already has a ring channel in ~p", [Agent#agent.login, Pid]),
 %	{reply, {ok, Pid}, State};
 %handle_call({ring_agent, AgentPid, Agent, Call, Timeout}, _From, #state{nodename = Node} = State) ->
 %	case State#state.freeswitch_up of
@@ -616,7 +615,7 @@ handle_call(get_default_dial_string, _From, State) ->
 %	end,
 %	{reply, Res, State};
 handle_call(Request, _From, State) ->
-	?INFO("Unexpected call:  ~p", [Request]),
+	lager:info("Unexpected call:  ~p", [Request]),
 	Reply = ok,
 	{reply, Reply, State}.
 
@@ -640,7 +639,7 @@ handle_cast({new_voicemail, UUID, File, Queue, Priority, Client}, #state{nodenam
 	link(Pid),
 	{noreply, State};
 handle_cast(_Msg, State) ->
-	%?CONSOLE("Cast:  ~p", [Msg]),
+	%?debugFmt("Cast:  ~p", [Msg]),
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -648,7 +647,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 %% @private
 handle_info({freeswitch_sendmsg, "inivr "++UUID}, #state{call_dict = Dict} = State) ->
-	?NOTICE("call ~s entered IVR", [UUID]),
+	lager:notice("call ~s entered IVR", [UUID]),
 	case dict:find(UUID, Dict) of
 		{ok, Pid} ->
 			Pid;
@@ -658,7 +657,7 @@ handle_info({freeswitch_sendmsg, "inivr "++UUID}, #state{call_dict = Dict} = Sta
 					link(Pid),
 					{noreply, State#state{call_dict = dict:store(UUID, Pid, Dict)}};
 				Else ->
-					?WARNING("Error setting up new call ~s:  ~p", [UUID, Else]),
+					lager:warning("Error setting up new call ~s:  ~p", [UUID, Else]),
 					{noreply, State}
 			end
 	end;
@@ -666,7 +665,7 @@ handle_info({get_pid, UUID, Ref, From}, #state{call_dict = Dict} = State) ->
 	case dict:find(UUID, Dict) of
 		{ok, Pid} ->
 			From ! {Ref, Pid},
-			?NOTICE("pid for ~s already allocated", [UUID]),
+			lager:notice("pid for ~s already allocated", [UUID]),
 			{noreply, State};
 		error ->
 			case freeswitch_media:start(State#state.nodename, State#state.dialstring, UUID) of
@@ -676,17 +675,17 @@ handle_info({get_pid, UUID, Ref, From}, #state{call_dict = Dict} = State) ->
 					{noreply, State#state{call_dict = dict:store(UUID, Pid, Dict)}};
 				Else ->
 					From ! {Ref, Else},
-					?WARNING("Could not create pid for ~s:  ~p", [UUID, Else]),
+					lager:warning("Could not create pid for ~s:  ~p", [UUID, Else]),
 					{noreply, State}
 			end
 	end;
 handle_info({'EXIT', Pid, Reason}, #state{eventserver = Pid, nodename = Nodename, freeswitch_up = true} = State) ->
-	?NOTICE("listener pid exited unexpectedly: ~p", [Reason]),
+	lager:notice("listener pid exited unexpectedly: ~p", [Reason]),
 	Lpid = start_listener(Nodename),
 	freeswitch:event(Nodename, ['CHANNEL_DESTROY']),
 	{noreply, State#state{eventserver = Lpid}};
 handle_info({'EXIT', Pid, Reason}, #state{xmlserver = Pid, nodename = Nodename, dialstring = _DialString, freeswitch_up = true, fetch_domain_user = Fopts} = State) ->
-	?NOTICE("XML pid exited unexpectedly: ~p", [Reason]),
+	lager:notice("XML pid exited unexpectedly: ~p", [Reason]),
 	{ok, NPid} = freeswitch:start_fetch_handler(Nodename, directory, ?MODULE, fetch_domain_user, Fopts),
 	link(NPid),
 	{noreply, State#state{xmlserver = NPid}};
@@ -695,7 +694,7 @@ handle_info({'EXIT', Pid, _Reason}, #state{eventserver = Pid} = State) ->
 handle_info({'EXIT', Pid, _Reason}, #state{xmlserver = Pid} = State) ->
 	{noreply, State#state{xmlserver = undefined}};
 handle_info({'EXIT', Pid, Reason}, #state{call_dict = Dict} = State) ->
-	?NOTICE("trapped exit of ~p, doing clean up for ~p", [Reason, Pid]),
+	lager:notice("trapped exit of ~p, doing clean up for ~p", [Reason, Pid]),
 	F = fun(Key, Value, Acc) ->
 		case Value of
 			Pid ->
@@ -723,7 +722,7 @@ handle_info({nodedown, Nodename}, #state{nodename = Nodename, xmlserver = Pid, e
 		?MODULE -> application:unset_env('OpenACD', ring_manager);
 		_ -> ok
 	end,
-	?WARNING("Freeswitch node ~p has gone down", [Nodename]),
+	lager:warning("Freeswitch node ~p has gone down", [Nodename]),
 	case is_pid(Pid) of
 		true -> exit(Pid, kill);
 		_ -> ok
@@ -737,7 +736,7 @@ handle_info({nodedown, Nodename}, #state{nodename = Nodename, xmlserver = Pid, e
 handle_info(freeswitch_ping, #state{nodename = Nodename, fetch_domain_user = Fopts} = State) ->
 	case net_adm:ping(Nodename) of
 		pong ->
-			?NOTICE("Freeswitch node ~p is back up", [Nodename]),
+			lager:notice("Freeswitch node ~p is back up", [Nodename]),
 			monitor_node(Nodename, true),
 			Lpid = start_listener(Nodename),
 			{ok, Pid} = freeswitch:start_fetch_handler(Nodename, directory, ?MODULE, fetch_domain_user, Fopts),
@@ -753,7 +752,7 @@ handle_info(freeswitch_ping, #state{nodename = Nodename, fetch_domain_user = Fop
 			{noreply, State}
 	end;
 handle_info(Info, State) ->
-	?DEBUG("Unexpected info:  ~p", [Info]),
+	lager:debug("Unexpected info:  ~p", [Info]),
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -796,7 +795,7 @@ start_listener(Nodename) ->
 listener(Node) ->
 	receive
 		{event, [UUID | Event]} ->
-			?DEBUG("recieved event '~p' from c node.", [UUID]),
+			lager:debug("recieved event '~p' from c node.", [UUID]),
 			Ename = proplists:get_value("Event-Name", Event),
 			case Ename of
 				"CHANNEL_DESTROY" ->
@@ -808,13 +807,13 @@ listener(Node) ->
 		{nodedown, Node} ->
 			gen_server:cast(?MODULE, nodedown);
 		 Otherwise ->
-			 ?INFO("Uncertain reply received by the fmm listener:  ~p", [Otherwise]),
+			 lager:info("Uncertain reply received by the fmm listener:  ~p", [Otherwise]),
 			 listener(Node)
 	end.
 
 -spec(fetch_domain_user/2 :: (Node :: atom(), State :: #state{}) -> 'ok').
 fetch_domain_user(Node, State) ->
-	?DEBUG("entering fetch loop with state ~p", [State]),
+	lager:debug("entering fetch loop with state ~p", [State]),
 	receive
 		{fetch, directory, "domain", "name", _Value, ID, [undefined | Data]} ->
 			case proplists:get_value("as_channel", Data) of
@@ -845,7 +844,7 @@ fetch_domain_user(Node, State) ->
 										{rtmp, Data} ->
 											freeswitch_media_manager:do_dial_string(proplists:get_value(rtmp, State, "rtmp/$1"), Data, [])
 									end,
-									?NOTICE("returning ~s for user directory entry ~s", [DialString, User]),
+									lager:notice("returning ~s for user directory entry ~s", [DialString, User]),
 									freeswitch:fetch_reply(Node, ID, lists:flatten(io_lib:format(?DIALUSERRESPONSE, [Domain, User, DialString])))
 							catch
 								_:_ -> % agent pid is toast?
@@ -860,7 +859,7 @@ fetch_domain_user(Node, State) ->
 							case proplists:get_value(sipauth, State) of
 								undefined ->
 									%% not doing sip auth, return nothing
-									?DEBUG("Not doing SIP auth", []),
+									lager:debug("Not doing SIP auth", []),
 									freeswitch:fetch_reply(Node, ID, ""),
 									ok;
 								_ ->
@@ -868,7 +867,7 @@ fetch_domain_user(Node, State) ->
 									Domain = proplists:get_value("domain", Data),
 									Realm = proplists:get_value("sip_auth_realm", Data),
 									% TODO Can this be done w/o dealing w/ a plain text pw?
-									?DEBUG("Sip auth\n\tUser:  ~p\n\tdomain:  ~p\n\tRelam:  ~p",[User,Domain,Realm]),
+									lager:debug("Sip auth\n\tUser:  ~p\n\tdomain:  ~p\n\tRelam:  ~p",[User,Domain,Realm]),
 									freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE)
 %									case agent_manager:query_agent(User) of
 %										{true, Pid} ->
@@ -913,10 +912,10 @@ fetch_domain_user(Node, State) ->
 			freeswitch:fetch_reply(Node, ID, ?EMPTYRESPONSE),
 			?MODULE:fetch_domain_user(Node, State);
 		{nodedown, Node} ->
-			?DEBUG("Node we were serving XML search requests to exited", []),
+			lager:debug("Node we were serving XML search requests to exited", []),
 			ok;
 		Other ->
-			?DEBUG("got other response: ~p", [Other]),
+			lager:debug("got other response: ~p", [Other]),
 			?MODULE:fetch_domain_user(Node, State)
 	end.
 

@@ -91,7 +91,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/queue.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
@@ -310,19 +309,19 @@ init([Fsnode, #callbacks{init = InitFun} = Callbacks, Options]) ->
 							exit(bad_destination);
 						{BaseDialstring, Destination} ->
 							% safe because it doesn't dive into fs manager pid
-							%?ERROR("ds:  ~s;  dest:  ~s", [BaseDialstring, Destination]),
+							%lager:error("ds:  ~s;  dest:  ~s", [BaseDialstring, Destination]),
 							freeswitch_media_manager:do_dial_string(BaseDialstring, Destination, DialStringOpts)
 					end,
 					case proplists:get_value(call, Options) of
 						undefined ->
-							?INFO("originating ring channel with args:  ~s", [DialString ++ " &park()"]);
+							lager:info("originating ring channel with args:  ~s", [DialString ++ " &park()"]);
 						#call{id = CallId} ->
-							?INFO("originating ring channel for ~p with args: ~p", [CallId, DialString ++ " &park()"])
+							lager:info("originating ring channel for ~p with args: ~p", [CallId, DialString ++ " &park()"])
 					end,
 					case freeswitch:bgapi(Fsnode, originate, DialString ++ " &park()") of
 						{ok, _BgApiId} ->
 							Gethandle = fun(Recusef, Count) ->
-								?DEBUG("Counted ~p", [Count]),
+								lager:debug("Counted ~p", [Count]),
 								case freeswitch:handlecall(Fsnode, UUID) of
 									{error, badsession} when Count > 10 ->
 										{error, badsession};
@@ -337,13 +336,13 @@ init([Fsnode, #callbacks{init = InitFun} = Callbacks, Options]) ->
 							end,
 							case Gethandle(Gethandle, 0) of
 								{error, badsession} ->
-									?ERROR("bad uuid ~p when calling ~p", [UUID, proplists:get_value(agent, Options)]),
+									lager:error("bad uuid ~p when calling ~p", [UUID, proplists:get_value(agent, Options)]),
 									{stop, normal};
 								{error, Other} ->
-									?ERROR("other error starting; ~p for ~p", [Other, proplist:get_value(agent, Options)]),
+									lager:error("other error starting; ~p for ~p", [Other, proplist:get_value(agent, Options)]),
 									{stop, normal};
 								_Else ->
-									?DEBUG("starting for ~p", [UUID]),
+									lager:debug("starting for ~p", [UUID]),
 										{ok, #state{
 											cnode = Fsnode,
 											uuid = UUID,
@@ -352,11 +351,11 @@ init([Fsnode, #callbacks{init = InitFun} = Callbacks, Options]) ->
 										}}
 							end;
 						Else ->
-							?ERROR("originate failed with ~p  when calling ~p", [Else, proplists:get_value(agent, Options)]),
+							lager:error("originate failed with ~p  when calling ~p", [Else, proplists:get_value(agent, Options)]),
 							{stop, normal}
 					end;
 				Else ->
-					?ERROR("create_uuid failed with ~p when trying to call ~p", [Else, proplists:get_value(agent, Options)]),
+					lager:error("create_uuid failed with ~p when trying to call ~p", [Else, proplists:get_value(agent, Options)]),
 					{stop, normal}
 			end;
 		SomeFaile ->
@@ -395,7 +394,7 @@ handle_call(Request, From, #state{callbacks = #callbacks{handle_call = CbCall} =
 %%--------------------------------------------------------------------
 %handle_cast(hangup, #state{uuid = UUID, persistent = true} = State) ->
 %	Callback = fun(OkErr, Res) ->
-%		?DEBUG("hungup persistent callback fun res:  ~p:~p", [OkErr,Res])
+%		lager:debug("hungup persistent callback fun res:  ~p:~p", [OkErr,Res])
 %	end,
 %	freeswitch:bgapi(State#state.cnode, uuid_transfer, UUID ++ " -both 'park' inline", Callback),
 %	{noreply, State};
@@ -416,7 +415,7 @@ handle_cast(Msg, #state{callbacks = #callbacks{handle_cast = CastFun, state = Cb
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({call, {event, [UUID | _Rest]}}, #state{cnode = Cnode, options = Options, uuid = UUID} = State) ->
-	?DEBUG("call", []),
+	lager:debug("call", []),
 	OptEvents = lists:sort(proplists:get_value(events, Options, [])),
 	BaseEvents = lists:sort(['CHANNEL_ANSWER', 'CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE', 'CHANNEL_HANGUP']),
 	Events = lists:umerge(OptEvents, BaseEvents),
@@ -448,7 +447,7 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{options = _Options, uui
 %				"CHANNEL_ANSWER" ->
 %					case proplists:get_value(single_leg, State#state.options) of
 %						true ->
-%							?INFO("Call with single leg answered", []),
+%							lager:info("Call with single leg answered", []),
 %							Call = State#state.callrec,
 %							try gen_media:oncall(Call#call.source) of
 %								invalid ->
@@ -458,7 +457,7 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{options = _Options, uui
 %									{noreply, State}
 %							catch
 %								exit:{noproc, _} ->
-%									?WARNING("~p died before I could complete the bridge", [Call#call.source]),
+%									lager:warning("~p died before I could complete the bridge", [Call#call.source]),
 %									% prolly get no such channel, but just in case it still lives.
 %									freeswitch:api(State#state.cnode, uuid_park, Call#call.id),
 %									{stop, normal, State}
@@ -471,7 +470,7 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{options = _Options, uui
 %						true ->
 %							{noreply, State};
 %						_ ->
-%							?INFO("Call bridged", []),
+%							lager:info("Call bridged", []),
 %							Call = State#state.callrec,
 %							try gen_media:oncall(Call#call.source) of
 %								invalid ->
@@ -481,7 +480,7 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{options = _Options, uui
 %									{noreply, State}
 %							catch
 %								exit:{noproc, _} ->
-%									?WARNING("~p died before I could complete the bridge", [Call#call.source]),
+%									lager:warning("~p died before I could complete the bridge", [Call#call.source]),
 %									% prolly get no such channel, but just in case it still lives.
 %									freeswitch:api(State#state.cnode, uuid_park, Call#call.id),
 %									{stop, normal, State}
@@ -494,24 +493,24 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{options = _Options, uui
 %					%AState = agent:dump_state(State#state.agent_pid),
 %%					case AState#agent.state of
 %%						oncall ->
-%%							?NOTICE("Agent ~s still oncall when ring channel hungup", [AState#agent.login]),
+%%							lager:notice("Agent ~s still oncall when ring channel hungup", [AState#agent.login]),
 %%							ok;
 %%						_ ->
 %%							ok
 %%					end,
 %					{noreply, State};
 %				_Else ->
-%					%?DEBUG("call_event ~p", [Event]),
+%					%lager:debug("call_event ~p", [Event]),
 %					{noreply, State}
 %			end;
 %		ReturnVal ->
 %			ReturnVal
 %	end;
 %handle_info(call_hangup, #state{persistent = undefined} = State) ->
-%	?DEBUG("Call hangup info", []),
+%	lager:debug("Call hangup info", []),
 %	{stop, normal, State};
 %handle_info(call_hangup, State) ->
-%	?WARNING("Call hangup when this is supposed to be persistent; ending messily", []),
+%	lager:warning("Call hangup when this is supposed to be persistent; ending messily", []),
 %	{stop, call_hangup, State};
 handle_info(Info, #state{callbacks = #callbacks{handle_info = CbInfoFun} = Callbacks} = State) ->
 	case CbInfoFun(Info, {State#state.cnode, State#state.uuid}, Callbacks#callbacks.state) of
@@ -525,7 +524,7 @@ handle_info(Info, #state{callbacks = #callbacks{handle_info = CbInfoFun} = Callb
 %% Function: terminate(Reason, State) -> void()
 %%--------------------------------------------------------------------
 terminate(Reason, #state{callbacks = #callbacks{terminate = Fun} = Callbacks} = State) ->
-	?NOTICE("FreeSWITCH ring channel teminating ~p", [Reason]),
+	lager:notice("FreeSWITCH ring channel teminating ~p", [Reason]),
 	Fun(Reason, {State#state.cnode, State#state.uuid}, Callbacks#callbacks.state).
 
 %%--------------------------------------------------------------------
@@ -546,8 +545,8 @@ code_change(OldVsn, #state{callbacks = #callbacks{code_change = Fun} = Callbacks
 %%--------------------------------------------------------------------
 
 %bgapi_handler(ok, Res) ->
-%	?DEBUG("Default bgapi handler:  ~p", [Res]),
+%	lager:debug("Default bgapi handler:  ~p", [Res]),
 %	ok;
 %bgapi_handler(error, Res) ->
-%	?WARNING("bgapi errors:  ~p", [Res]),
+%	lager:warning("bgapi errors:  ~p", [Res]),
 %	ok.

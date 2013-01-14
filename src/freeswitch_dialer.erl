@@ -44,7 +44,6 @@
 		start_fg/6
 	]).
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
 -ifdef(TEST).
@@ -111,7 +110,7 @@ init([Node, Number, Exten, Skills, Client, Vars, Foreground]) ->
 								reserve_agent(State#state{fg_pid = Pid})
 						end;
 					Else ->
-						?WARNING("create_uuid returned ~p", [Else]),
+						lager:warning("create_uuid returned ~p", [Else]),
 						{stop, bad_uuid}
 				end
 	end.
@@ -138,7 +137,7 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{cnode = Node, uuid = UU
 	case Event of
 		"CHANNEL_PARK" ->
 			AgentRec = agent:dump_state(State#state.agent),
-			?INFO("call got parked, send them to an agent at ~p", [freeswitch_media_manager:get_agent_dial_string(AgentRec, [])]),
+			lager:info("call got parked, send them to an agent at ~p", [freeswitch_media_manager:get_agent_dial_string(AgentRec, [])]),
 			freeswitch:sendmsg(Node, UUID,
 				[{"call-command", "execute"},
 					{"execute-app-name", "bridge"},
@@ -159,17 +158,17 @@ handle_info({call_event, {event, [UUID | Rest]}}, #state{cnode = Node, uuid = UU
 			State#state.fg_pid ! {dialer_result, {error, no_answer}},
 			{noreply, State#state{fg_pid = false}};
 		_ ->
-			?INFO("Got ~p", [Event]),
+			lager:info("Got ~p", [Event]),
 			{noreply, State}
 	end;
 handle_info(call_hangup, State) ->
-	?DEBUG("Call hangup info", []),
+	lager:debug("Call hangup info", []),
 	% channel hungup, set the agent back to a sane state
 	agent:set_state(State#state.agent, idle),
 	agent:set_state(State#state.agent, wrapup, State#state.call),
 	{stop, normal, State};
 handle_info(_Info, State) ->
-	%?NOTICE("Got message: ~p", [Info]),
+	%lager:notice("Got message: ~p", [Info]),
 	{noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -210,11 +209,11 @@ reserve_agent(State) ->
 
 			UUID = State#state.uuid,
 			Dialstring = freeswitch_media_manager:do_dial_string(freeswitch_media_manager:get_default_dial_string(), State#state.number, ["origination_uuid="++UUID, "hangup_after_bridge=true" | DialVars]),
-			?INFO("Dialstring: ~p", [Dialstring]),
+			lager:info("Dialstring: ~p", [Dialstring]),
 			case freeswitch:bgapi(State#state.cnode, originate, Dialstring ++ " "++State#state.exten) of
 				{ok, _JobID} ->
 					Gethandle = fun(Recusef, Count) ->
-						?DEBUG("Counted ~p", [Count]),
+						lager:debug("Counted ~p", [Count]),
 						case freeswitch:handlecall(State#state.cnode, UUID) of
 							{error, badsession} when Count > 10 ->
 								{error, badsession};
@@ -229,19 +228,19 @@ reserve_agent(State) ->
 					end,
 					case Gethandle(Gethandle, 0) of
 						{error, badsession} ->
-							?ERROR("bad uuid ~p when calling ~p", [UUID, State#state.number]),
+							lager:error("bad uuid ~p when calling ~p", [UUID, State#state.number]),
 							agent:set_state(AgentPid, idle),
 							{stop, bad_uuid};
 						{error, Other} ->
-							?ERROR("other error starting; ~p for ~p", [Other, State#state.number]),
+							lager:error("other error starting; ~p for ~p", [Other, State#state.number]),
 							agent:set_state(AgentPid, idle),
 							{stop, unknown_error};
 						_Else ->
-							?DEBUG("starting for ~p", [UUID]),
+							lager:debug("starting for ~p", [UUID]),
 							{ok, State#state{agent = AgentPid, call = Call}}
 					end;
 				Else ->
-					?ERROR("originate failed with ~p  when calling ~p", [Else, State#state.number]),
+					lager:error("originate failed with ~p  when calling ~p", [Else, State#state.number]),
 					agent:set_state( AgentPid, idle),
 					{stop, originate_failed}
 			end

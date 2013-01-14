@@ -47,7 +47,6 @@
 -ifdef(TEST).
 	-include_lib("eunit/include/eunit.hrl").
 -endif.
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
 
@@ -117,32 +116,32 @@ handle_cast(_Msg, State) ->
 handle_info({cpx_monitor_event, {set, _Timestamp, {{agent, _Key}, Details, _Node}}}, State) ->
 	case proplists:get_value(state, Details) of
 		S when State#state.oncall == false, (S == oncall orelse S == outgoing) ->
-			?NOTICE("Watched ~p just went oncall ~p", [State#state.type, Details]),
+			lager:notice("Watched ~p just went oncall ~p", [State#state.type, Details]),
 			% check the state data to make sure its a voice call
 			case proplists:get_value(statedata, Details) of
 				Call when is_record(Call, call), element(3, Call) == voice ->
-					?NOTICE("we can eavesdrop on ~p", [Call#call.id]),
+					lager:notice("we can eavesdrop on ~p", [Call#call.id]),
 					Res = freeswitch:sendmsg(State#state.node, State#state.uuid,
 						[{"call-command", "execute"},
 							{"execute-app-name", "eavesdrop"},
 							{"execute-app-arg", Call#call.id}]),
-					?NOTICE("eavesdrop result: ~p", [Res]),
+					lager:notice("eavesdrop result: ~p", [Res]),
 					{noreply, State#state{oncall = true}};
 				_ ->
 					{noreply, State}
 			end;
 		_ when State#state.oncall == true ->
-			?NOTICE("Watched ~p just went offcall", [State#state.type]),
+			lager:notice("Watched ~p just went offcall", [State#state.type]),
 			{noreply, State#state{oncall = false}};
 		_ ->
 			{noreply, State}
 	end;
 handle_info({originate, ok, "+OK "++RawUUID}, State) ->
 	UUID = util:string_chomp(RawUUID),
-	?NOTICE("Call originated OK: ~p", [UUID]),
+	lager:notice("Call originated OK: ~p", [UUID]),
 	case freeswitch:handlecall(State#state.node, UUID) of
 		ok ->
-			?NOTICE("bound to call", []),
+			lager:notice("bound to call", []),
 			cpx_monitor:subscribe(State#state.filter),
 			% TODO - find initial call to monitor, if any
 			{noreply, State#state{uuid = UUID}};
@@ -150,12 +149,12 @@ handle_info({originate, ok, "+OK "++RawUUID}, State) ->
 			{stop, {no_channel, Reply}, State}
 	end;
 handle_info({originate, error, Reply}, State) ->
-	?NOTICE("Call originate FAILED", []),
+	lager:notice("Call originate FAILED", []),
 	{stop, {bad_originate, Reply}, State};
 handle_info(call_hangup, State) ->
 	{stop, normal, State};
 handle_info(_Info, State) ->
-	%?NOTICE("Got message: ~p", [Info]),
+	%lager:notice("Got message: ~p", [Info]),
 	{noreply, State}.
 
 terminate(_Reason, _State) ->

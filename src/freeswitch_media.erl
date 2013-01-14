@@ -39,7 +39,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--include_lib("openacd/include/log.hrl").
 -include_lib("openacd/include/queue.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
@@ -256,16 +255,16 @@ handle_answer(Apid, StateName, Callrec, GenMediaState, State) when
 		{ok, _} ->
 			RecPath = case cpx_supervisor:get_archive_path(Callrec) of
 				none ->
-					?DEBUG("archiving is not configured for ~p", [Callrec#call.id]),
+					lager:debug("archiving is not configured for ~p", [Callrec#call.id]),
 					undefined;
 				{error, _Reason, Path} ->
-					?WARNING("Unable to create requested call archiving directory for recording ~p for ~p", [Path, Callrec#call.id]),
+					lager:warning("Unable to create requested call archiving directory for recording ~p for ~p", [Path, Callrec#call.id]),
 					undefined;
 				Path ->
 					% get_archive_path ensures the directory is writeable by us and
 					% exists, so this should be safe to do (the call will be hungup
 					% if creating the recording file fails)
-					?DEBUG("archiving ~p to ~s.wav", [Callrec#call.id, Path]),
+					lager:debug("archiving ~p to ~s.wav", [Callrec#call.id, Path]),
 					freeswitch:api(State#state.cnode, uuid_setvar, Callrec#call.id ++ " RECORD_APPEND true"),
 					freeswitch:api(State#state.cnode, uuid_record, Callrec#call.id ++ " start "++Path++".wav"),
 					Path++".wav"
@@ -273,7 +272,7 @@ handle_answer(Apid, StateName, Callrec, GenMediaState, State) when
 			agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"height">>, <<"300px">>}, {<<"title">>, <<"Server Boosts">>}]}),
 			{ok, State#state{agent_pid = Apid, record_path = RecPath, queued = false, statename = oncall, ringchannel = RingPid, ringuuid = RingUUID}};
 		{error, Error} ->
-			?WARNING("Could not do answer:  ~p", [Error]),
+			lager:warning("Could not do answer:  ~p", [Error]),
 			{error, Error, State}
 	end.
 
@@ -290,17 +289,17 @@ handle_end_call(_Gmstate, Callrec, _Gmstatedata, State) ->
 
 %% @hidden
 handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
-	?INFO("ring to agent ~p for call ~s", [Apid, Callrec#call.id]),
+	lager:info("ring to agent ~p for call ~s", [Apid, Callrec#call.id]),
 	% TODO - we could avoid this if we had the agent's login,
 	AgentRec = agent:dump_state(Apid),
 	handle_ring({Apid, AgentRec}, RingData, Callrec, State);
 handle_ring({_Apid, #agent{ring_channel = {undefined, persistant, _}} = Agent}, _RingData, _Callrec, State) ->
-	?WARNING("Agent (~p) does not have it's persistant channel up yet", [Agent#agent.login]),
+	lager:warning("Agent (~p) does not have it's persistant channel up yet", [Agent#agent.login]),
 	{invalid, State};
 handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistant, _EndPointType}}} = _Agent, _RingData, Callrec, State) ->
 	%% a persisitant ring does the hard work for us
 	%% go right to the okay.
-	?INFO("Ring channel made things happy, I assume", []),
+	lager:info("Ring channel made things happy, I assume", []),
 	{ok, [{"itxt", State#state.ivroption}], Callrec#call{ring_path = inband, media_path = inband}, State#state{ringchannel = EndpointPid, agent_pid = Apid}};
 handle_ring({Apid, #agent{ring_channel = {RPid, transient, _}} = _AgentRec}, _RingData, _Callrec, State) ->
 	NewStatename = case State#state.statename of
@@ -312,12 +311,12 @@ handle_ring({Apid, #agent{ring_channel = {RPid, transient, _}} = _AgentRec}, _Ri
 % TODO This needs to be updated when conferencing is fixed.
 %% @hidden
 handle_ring_stop(_StateName, Callrec, _GenMedia, #state{xferchannel = RingChannel} = State) when is_pid(RingChannel) ->
-	?DEBUG("hanging up transfer channel for ~p", [Callrec#call.id]),
+	lager:debug("hanging up transfer channel for ~p", [Callrec#call.id]),
 	freeswitch_ring:hangup(RingChannel),
 	{ok, State#state{xferchannel = undefined, xferuuid = undefined}};
 
 handle_ring_stop(StateName, Callrec, _GenMedia, State) ->
-	?DEBUG("hanging up ring channel for ~p", [Callrec#call.id]),
+	lager:debug("hanging up ring channel for ~p", [Callrec#call.id]),
 	case State#state.ringchannel of
 		undefined ->
 			ok;
@@ -360,35 +359,35 @@ handle_spy(_Spy, _StateName, _Call, _Internal, State) ->
 %% @hidden
 handle_agent_transfer(AgentPid, Timeout, Call, State) ->
 	AgentRec = agent:dump_state(AgentPid), % TODO - avoid this
-	?INFO("transfer_agent to ~p for call ~p", [AgentRec#agent.login, Call#call.id]),
+	lager:info("transfer_agent to ~p for call ~p", [AgentRec#agent.login, Call#call.id]),
 	% fun that returns another fun when passed the UUID of the new channel
 	% (what fun!)
 	F = fun(_UUID) ->
 		fun(ok, _Reply) ->
 			% agent picked up?
-				?INFO("Agent transfer picked up? ~p", [Call#call.id]);
+				lager:info("Agent transfer picked up? ~p", [Call#call.id]);
 		(error, Reply) ->
-			?WARNING("originate failed for ~p with  ~p", [Call#call.id, Reply])
+			lager:warning("originate failed for ~p with  ~p", [Call#call.id, Reply])
 		end
 	end,
 	case freeswitch_ring:start_link(State#state.cnode, AgentRec, AgentPid, Call, Timeout, F, [single_leg, no_oncall_on_bridge, {dial_vars, State#state.dial_vars}]) of
 		{ok, Pid} ->
 			{ok, [{"ivropt", State#state.ivroption}, {"caseid", State#state.caseid}], State#state{statename = oncall_ringing, xferchannel = Pid, xferuuid = freeswitch_ring:get_uuid(Pid)}};
 		{error, Error} ->
-			?ERROR("error:  ~p", [Error]),
+			lager:error("error:  ~p", [Error]),
 			{error, Error, State}
 	end.
 
 %% @hidden
 handle_wrapup(_From, _StateName, #call{media_path = inband} = Call, _GenMediaState, State) ->
-	?DEBUG("Handling wrapup request", []),
+	lager:debug("Handling wrapup request", []),
 	% TODO This could prolly stand to be a bit more elegant.
 	freeswitch:api(State#state.cnode, uuid_kill, Call#call.id),
 	{hangup, State};
 handle_wrapup(_From, _StateName, _Call, _GenMediaState, State) ->
 	% This intentionally left blank; media is out of band, so there's
 	% no direct hangup by the agent
-	?DEBUG("Not doing wrapup request", []),
+	lager:debug("Not doing wrapup request", []),
 	{ok, State}.
 
 %% @hidden
@@ -397,7 +396,7 @@ handle_queue_transfer(_Queue, _StateName, Call, _GenMediaState, #state{cnode = F
 		undefined ->
 			ok;
 		Path ->
-			?DEBUG("stopping recording due to queue transfer for ~p", [Call#call.id]),
+			lager:debug("stopping recording due to queue transfer for ~p", [Call#call.id]),
 			freeswitch:api(Fnode, uuid_record, Call#call.id ++ " stop " ++ Path)
 	end,
 	freeswitch:api(Fnode, uuid_park, Call#call.id),
@@ -430,7 +429,7 @@ handle_call(dump_state, _From, _, _Call, _, State) ->
 	{reply, State, State};
 
 handle_call(Msg, _From, _, Call, _, State) ->
-	?INFO("unhandled mesage ~p for ~p", [Msg, Call#call.id]),
+	lager:info("unhandled mesage ~p for ~p", [Msg, Call#call.id]),
 	{reply, ok, State}.
 
 
@@ -443,26 +442,26 @@ handle_call(Msg, _From, _, Call, _, State) ->
 
 handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = Statename} = State)
 		when Statename == oncall; Statename == oncall_ringing ->
-	?DEBUG("toggle hold while oncall", []),
+	lager:debug("toggle hold while oncall", []),
 	#state{cnode = Fnode, moh = Muzak, ringuuid = Ringid} = State,
 	#call{id = Callid} = Call,
-	?INFO("Gonna try to set ~s on hold", [Call#call.id]),
+	lager:info("Gonna try to set ~s on hold", [Call#call.id]),
 	freeswitch:api(Fnode, uuid_setvar_multi, Callid ++ " hangup_after_bridge=false;park_after_bridge=true"),
-	?DEBUG("Ringid:  ~p", [Ringid]),
+	lager:debug("Ringid:  ~p", [Ringid]),
 	ok = fs_send_execute(Fnode, Ringid, "set", "hangup_after_bridge=false"),
 	ok = fs_send_execute(Fnode, Ringid, "set", "park_after_bridge=true"),
 	Res = freeswitch:api(Fnode, uuid_transfer, Ringid ++ " park inline"),
-	?ERROR("Res of the api:  ~p", [Res]),
+	lager:error("Res of the api:  ~p", [Res]),
 	case Muzak of
 		none -> ok;
 		_ ->
-			?ERROR("5 ~p", [fs_send_execute(Fnode, Callid, "playback", "local_stream://" ++ Muzak)])
+			lager:error("5 ~p", [fs_send_execute(Fnode, Callid, "playback", "local_stream://" ++ Muzak)])
 	end,
 	{noreply, State#state{statename = oncall_hold}};
 
 %% oncall hold -> next_state
 handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = oncall_hold} = State) ->
-	?INFO("Gonna try to pick up the holder dude for ~s", [Call#call.id]),
+	lager:info("Gonna try to pick up the holder dude for ~s", [Call#call.id]),
 	#state{cnode = Fnode, ringuuid = Ringid} = State,
 	#call{id = Callid} = Call,
 	freeswitch:api(Fnode, uuid_bridge, Callid ++ " " ++ Ringid),
@@ -476,12 +475,12 @@ handle_cast({contact_3rd_party, _Args} = Cast, Statename, Call, GenMediaState, #
 	case freeswitch:api(Fnode, uuid_transfer, Call#call.id ++ " conference:" ++
 		ConfId ++ " inline") of
 		{ok, Res} ->
-			?INFO("Success result creating conferance and transfering call to it:  ~p", [Res]),
+			lager:info("Success result creating conferance and transfering call to it:  ~p", [Res]),
 			% okay, solidify the conference state change, and go on.
 			Newstate = State#state{conference_id = ConfId, statename = hold_conference},
 			handle_cast(Cast, Statename, Call, GenMediaState, Newstate);
 		Else ->
-			?ERROR("Could not create conference:  ~p", [Else]),
+			lager:error("Could not create conference:  ~p", [Else]),
 			{noreply, State}
 	end;
 
@@ -507,7 +506,7 @@ handle_cast({contact_3rd_party, Destination}, _Statename, Call, _GenMediaState, 
 		{ok, UUID} ->
 			{noreply, State#state{'3rd_party_id' = UUID, statename = hold_conference_3rdparty}};
 		Else ->
-			?WARNING("Failed to contact 3rd party ~s due to:  ~p", [Destination, Else]),
+			lager:warning("Failed to contact 3rd party ~s due to:  ~p", [Destination, Else]),
 			{noreply, State}
 	end;
 
@@ -525,7 +524,7 @@ handle_cast(retrieve_conference, _Statename, Call, _GenMediaState, #state{
 
 % 3rd_party -> hold_conference_3rdparty | in_conference | hold_conference
 handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = '3rd_party'} = State) ->
-	?INFO("Place 3rd party on hold", []),
+	lager:info("Place 3rd party on hold", []),
 	#state{cnode = Fnode, moh = _Muzak, ringuuid = Ringid, '3rd_party_id' = ThirdPId} = State,
 	ok = fs_send_execute(Fnode, Ringid, "set", "hangup_after_bridge=false"),
 	ok = fs_send_execute(Fnode, Ringid, "set", "park_after_bridge=true"),
@@ -537,18 +536,18 @@ handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = '
 	{noreply, State#state{statename = hold_conference_3rdparty}};
 
 handle_cast(retrieve_conference, Statename, Call, GenMediaState, #state{statename = '3rd_party'} = State) ->
-	?INFO("Place 3rd party on hold, and go to the conference", []),
+	lager:info("Place 3rd party on hold, and go to the conference", []),
 	{noreply, MidState} = handle_cast(toggle_hold, Statename, Call, GenMediaState, State),
 	{noreply, MidState#state{statename = in_conference_3rdparty}};
 
 handle_cast(retrieve_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = 'in_conference_3rdparty'} = State) ->
-	?INFO("Taking agent out of conference, briding to 3rdparyt",[]),
+	lager:info("Taking agent out of conference, briding to 3rdparyt",[]),
 	#state{cnode = Fnode, ringuuid = Ringid, '3rd_party_id' = Thirdy} = State,
 	freeswitch:api(Fnode, uuid_bridge, Thirdy ++ " " ++ Ringid),
 	{noreply, State#state{statename = '3rd_party'}};
 
 handle_cast(hangup_3rd_party, Statename, Call, GenMediaState, #state{statename = '3rd_party'} = State) ->
-	?INFO("killing 3rd party channel while talking w/ them", []),
+	lager:info("killing 3rd party channel while talking w/ them", []),
 	{noreply, MidState} = handle_cast(toggle_hold, Statename, Call, GenMediaState, State),
 	handle_cast(hangup_3rd_party, Statename, Call, GenMediaState, MidState);
 
@@ -568,19 +567,19 @@ handle_cast({merge_3rd_party, IncludeAgent}, _Statename, _Call, _GenMediaState, 
 % retrieve conference also works here.
 handle_cast(retrieve_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = hold_conference_3rdparty} = State) ->
 	#state{cnode= Fnode, ringuuid = Ringid, '3rd_party_id' = Thirdpid} = State,
-	?INFO("Picking up help 3rd party:  ~s", [Thirdpid]),
+	lager:info("Picking up help 3rd party:  ~s", [Thirdpid]),
 	freeswitch:bgapi(Fnode, uuid_bridge, Thirdpid ++ " " ++ Ringid),
 	{noreply, State#state{statename = '3rd_party'}};
 
 handle_cast(hangup_3rd_party, _Statename, _Call, _GenMediaState, #state{statename = 'hold_conference_3rdparty'} = State) ->
-	?INFO("hangling up on 3rd party", []),
+	lager:info("hangling up on 3rd party", []),
 	#state{cnode = Fnode, '3rd_party_id' = Thirdid} = State,
 	freeswitch:bgapi(Fnode, uuid_kill, Thirdid),
 	{noreply, State#state{statename = 'hold_conference'}};
 
 % in_conference -> '3rdparty' | 'conference_hold'
 handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = 'in_conference'} = State) ->
-	?INFO("Place conference on hold", []),
+	lager:info("Place conference on hold", []),
 	#state{cnode = Fnode, ringuuid = Ringid} = State,
 	ok = fs_send_execute(Fnode, Ringid, "set", "hangup_after_bridge=false"),
 	ok = fs_send_execute(Fnode, Ringid, "set", "park_after_bridge=true"),
@@ -588,14 +587,14 @@ handle_cast(toggle_hold, _Statename, _Call, _GenMediaState, #state{statename = '
 	{{mediapush, hold_conference}, State#state{statename = hold_conference}};
 
 handle_cast({contact_3rd_party, _Targ} = Cast, Statename, Call, GenMediaState, #state{statename = 'in_conference'} = State) ->
-	?INFO("contact 3rd party, means place conference on hold first", []),
+	lager:info("contact 3rd party, means place conference on hold first", []),
 	{noreply, MidState} = handle_cast(toggle_hold, Statename, Call, GenMediaState, State),
 	handle_cast(Cast, Statename, Call, GenMediaState, MidState);
 
 % any state.
 handle_cast({audio_level, Target, Level}, _Statename, Call, _GenMediaState, #state{statename = Statename} =
 		State) when Statename == oncall; Statename == oncall_ringing ->
-	?INFO("uuid_audio for ~s with direction ~s set to ~p", [Call#call.id, Target, Level]),
+	lager:info("uuid_audio for ~s with direction ~s set to ~p", [Call#call.id, Target, Level]),
 	ApiStr = Call#call.id ++ " start " ++ binary_to_list(Target) ++ " level "
 		++ integer_to_list(Level),
 	freeswitch:bgapi(State#state.cnode, uuid_audio, ApiStr),
@@ -614,13 +613,13 @@ handle_cast({blind_transfer, Destination}, _Statename, Call, _GenMediaState, #st
 	BaseDS = freeswitch_media_manager:get_default_dial_string(),
 	RingOpts = [CallerNameOpt, CallerNumberOpt, "hangup_after_bridge=false"],
 	Dialstring = freeswitch_media_manager:do_dial_string(BaseDS, Destination, RingOpts),
-	?DEBUG("Transfering ~s to ~s blindly.", [UUID, Dialstring]),
+	lager:debug("Transfering ~s to ~s blindly.", [UUID, Dialstring]),
 	freeswitch:api(Fnode, uuid_setvar, UUID ++ " park_after_bridge true"),
 	freeswitch:bgapi(Fnode, uuid_transfer, UUID ++ " 'm:^:bridge:" ++ Dialstring ++ "' inline"),
 	{wrapup, State#state{statename = 'blind_transfered'}};
 
 handle_cast({play_dtmf, []}, _Statename, _Call, _GenMediaState, State) ->
-	?DEBUG("Dtmf not played due to no digits", []),
+	lager:debug("Dtmf not played due to no digits", []),
 	{noreply, State};
 
 handle_cast({play_dtmf, Digits}, Statename, Call, GenMediaState, State) when is_binary(Digits) ->
@@ -723,22 +722,22 @@ handle_cast(Request, Statename, Call, GenMediaState, State) when is_record(Reque
 				{ok, #blindtransferrequest{target = Dest}} ->
 					handle_cast({blind_transfer, Dest}, Statename, Call, GenMediaState, State);
 				BTIgnored ->
-					?DEBUG("blind transfer ignored:  ~p", [BTIgnored]),
+					lager:debug("blind transfer ignored:  ~p", [BTIgnored]),
 					{noreply, State}
 			end;
 		'PLAY_DTMF' ->
 			case cpx_freeswitch_pb:get_extension(FixedRequest, dtmf_string) of
 				{ok, []} ->
-					?DEBUG("dtmf request ignored due to lack of digits", []),
+					lager:debug("dtmf request ignored due to lack of digits", []),
 					{noreply, State};
 				{ok, Dtmf} ->
 					handle_cast({send_dtmf, Dtmf}, Statename, Call, GenMediaState, State);
 				DtmfIgnored ->
-					?DEBUG("dtmf request ignored:  ~p", [DtmfIgnored]),
+					lager:debug("dtmf request ignored:  ~p", [DtmfIgnored]),
 					{noreply, State}
 			end;
 		FullReqIgnored ->
-			?DEBUG("Request fully ignored:  ~p", [FullReqIgnored]),
+			lager:debug("Request fully ignored:  ~p", [FullReqIgnored]),
 			{noreply, State}
 	end;
 
@@ -748,11 +747,11 @@ handle_cast({'3rd_party_pickup', ChanPid}, _Statename, _Call, _GenMediaState, #s
 	{noreply, State#state{statename = '3rd_party'}};
 
 handle_cast({set_caseid, CaseID}, _Statename, Call, _GenMediaState, State) ->
-	?INFO("setting caseid for ~p to ~p", [Call#call.id, CaseID]),
+	lager:info("setting caseid for ~p to ~p", [Call#call.id, CaseID]),
 	{noreply, State#state{caseid = CaseID}};
 
 handle_cast(Msg, _, _Call, _, State) ->
-	?DEBUG("unhandled cast while in state ~p:  ~p", [State#state.statename, Msg]),
+	lager:debug("unhandled cast while in state ~p:  ~p", [State#state.statename, Msg]),
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -773,16 +772,16 @@ handle_info(check_recovery, _StateName, Call, _Internal, State) ->
 handle_info({'EXIT', Pid, Reason}, StateName, Call, _Internal,
 		#state{ringchannel = Pid} = State) when StateName =:= oncall_ringing;
 		StateName =:= inqueue_ringing ->
-	?WARNING("Handling ring channel ~w exit ~p for ~p", [Pid, Reason, Call#call.id]),
+	lager:warning("Handling ring channel ~w exit ~p for ~p", [Pid, Reason, Call#call.id]),
 	{stop_ring, State#state{ringchannel = undefined}};
 
 handle_info({'EXIT', Pid, noconnection}, _StateName, _Call, _Internal,
 		State) ->
-	?WARNING("Exit of ~p due to noconnection; this normally indicates a fatal freeswitch failure, so going down too.", [Pid]),
+	lager:warning("Exit of ~p due to noconnection; this normally indicates a fatal freeswitch failure, so going down too.", [Pid]),
 	{stop, noconnection, State};
 
 handle_info({'EXIT', Pid, Reason}, _StateName, Call, _Internal, #state{manager_pid = Pid} = State) ->
-	?WARNING("Handling manager exit from ~w due to ~p for ~p", [Pid, Reason, Call#call.id]),
+	lager:warning("Handling manager exit from ~w due to ~p for ~p", [Pid, Reason, Call#call.id]),
 	{ok, Tref} = timer:send_after(1000, check_recovery),
 	{noreply, State#state{manager_pid = Tref}};
 
@@ -792,7 +791,7 @@ handle_info({call, {event, [UUID | Rest]}}, _StateName, Call, _Internal, State) 
 		'CHANNEL_BRIDGE', 'CHANNEL_PARK', 'CHANNEL_HANGUP',
 		'CHANNEL_HANGUP_COMPLETE', 'CHANNEL_DESTROY', 'DTMF',
 		'CHANNEL_ANSWER', 'CUSTOM', 'conference::maintenance']),
-	?DEBUG("reporting new call ~p (eventage:  ~p).", [UUID, SetSess]),
+	lager:debug("reporting new call ~p (eventage:  ~p).", [UUID, SetSess]),
 	case State#state.uuid of
 		UUID -> freeswitch_media_manager:notify(UUID, self());
 		_ -> ok
@@ -806,47 +805,47 @@ handle_info({set_agent, Login, Apid}, _StateName, _Call, _Intenral, State) ->
 	{noreply, State#state{agent = Login, agent_pid = Apid}};
 
 handle_info({bgok, Reply}, _StateName, Call, _Internal, State) ->
-	?DEBUG("bgok:  ~p for ~p", [Reply, Call#call.id]),
+	lager:debug("bgok:  ~p for ~p", [Reply, Call#call.id]),
 	{noreply, State};
 
 handle_info({bgerror, "-ERR NO_ANSWER\n"}, _StateName, Call, _Internal, State) ->
-	?INFO("Potential ringout.  Statecook:  ~p for ~p", [State#state.cook, Call#call.id]),
+	lager:info("Potential ringout.  Statecook:  ~p for ~p", [State#state.cook, Call#call.id]),
 	%% the apid is known by gen_media, let it handle if it is not not.
 	{stop_ring, State};
 
 handle_info({bgerror, "-ERR USER_BUSY\n"}, _StateName, Call, _Internal, State) ->
-	?NOTICE("Agent rejected the call ~p", [Call#call.id]),
+	lager:notice("Agent rejected the call ~p", [Call#call.id]),
 	{stop_ring, State};
 
 handle_info({bgerror, Reply}, _StateName, Call, _Internal, State) ->
-	?WARNING("unhandled bgerror: ~p for ~p", [Reply, Call#call.id]),
+	lager:warning("unhandled bgerror: ~p for ~p", [Reply, Call#call.id]),
 	{noreply, State};
 
 handle_info(channel_destroy, _StateName, Call, _Internal, #state{in_control = InControl} = State) when not InControl ->
-	?NOTICE("Hangup in IVR for ~p", [Call#call.id]),
+	lager:notice("Hangup in IVR for ~p", [Call#call.id]),
 	{stop, hangup, State};
 % TODO This had a use at some point, but was cuasing ramdom hangups.
 % need to find what was sending :(
 %handle_info(call_hangup, Call, State) ->
-%	?NOTICE("Call hangup info, terminating ~p", [Call#call.id]),
+%	lager:notice("Call hangup info, terminating ~p", [Call#call.id]),
 %	catch freeswitch_ring:hangup(State#state.ringchannel),
 %	{stop, normal, State};
 
 handle_info({'DOWN', Ref, process, Pid, Cause}, _Statename, Call,
 		_Internal, #state{statename = oncall,
 		spawn_oncall_mon = {Pid, Ref}} = State) ->
-	?DEBUG("Oncaller pid termination cause:  ~p", [Cause]),
+	lager:debug("Oncaller pid termination cause:  ~p", [Cause]),
 	cdr:media_custom(Call, oncall, ?cdr_states, []),
 	{{mediapush, caller_offhold}, State#state{spawn_oncall_mon = undefined}};
 
 handle_info(call_hangup, _StateName, Call, _Internal, State) ->
-	?NOTICE("Call hangup info, terminating ~p", [Call#call.id]),
+	lager:notice("Call hangup info, terminating ~p", [Call#call.id]),
 	catch freeswitch_ring:hangup(State#state.ringchannel),
 	{stop, normal, State};
 
 handle_info(Info, _StateName, Call, _Internal, State) ->
-	?INFO("unhandled info ~p for ~p", [Info, Call#call.id]),
-	?DEBUG("unhandled state:  ~p", [State]),
+	lager:info("unhandled info ~p for ~p", [Info, Call#call.id]),
+	lager:debug("unhandled state:  ~p", [State]),
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -854,7 +853,7 @@ handle_info(Info, _StateName, Call, _Internal, State) ->
 %%--------------------------------------------------------------------
 %% @private
 terminate(Reason, _StateName, Call, _Internal, _State) ->
-	?NOTICE("terminating: ~p ~p", [Reason, Call#call.id]),
+	lager:notice("terminating: ~p ~p", [Reason, Call#call.id]),
 	ok.
 
 %%--------------------------------------------------------------------
@@ -884,13 +883,13 @@ originate(Node, BaseDialstring, Destination, InOpts) ->
 		{ok, _BgApiId} ->
 			case originate_gethandle(Node, UUID) of
 				{error, Err} ->
-					?WARNING("Cound not originate ~s due to ~p", [UUID, Err]),
+					lager:warning("Cound not originate ~s due to ~p", [UUID, Err]),
 					{error, Err};
 				_ ->
 					{ok, UUID}
 			end;
 		Bgerr ->
-			?WARNING("Could not start originate:  ~p", [Bgerr]),
+			lager:warning("Could not start originate:  ~p", [Bgerr]),
 			{error, Bgerr}
 	end.
 
@@ -916,13 +915,13 @@ case_event_name([UUID | Rawcall], Callrec, State) ->
 		"CUSTOM" -> {"CUSTOM", proplists:get_value("Event-Subclass", Rawcall)};
 		Else -> Else
 	end,
-	?DEBUG("Event ~p for ~s while in state ~p", [Ename, UUID, State#state.statename]),
+	lager:debug("Event ~p for ~s while in state ~p", [Ename, UUID, State#state.statename]),
 	case_event_name(Ename, UUID, Rawcall, Callrec, State).
 
 %% @private
 case_event_name({"CUSTOM", "conference::maintenance"}, UUID, _Rawcall, Callrec, #state{statename = Statename, '3rd_party_id' = UUID} = State) when
 	Statename =:= 'in_conference'; Statename =:= 'hold_conference' ->
-		?INFO("finishing up a 3rd paryt merge",[]),
+		lager:info("finishing up a 3rd paryt merge",[]),
 		case Statename of
 			in_conference ->
 				#state{cnode = Fnode, conference_id = Confid, ringuuid = Ringid} = State,
@@ -942,12 +941,12 @@ case_event_name("CHANNEL_ANSWER", UUID, _Rawcall, Callrec, #state{
 	{{mediapush, '3rd_party'}, State#state{statename = '3rd_party'}};
 
 case_event_name("CHANNEL_BRIDGE", UUID, _Rawcall, Callrec, #state{'3rd_party_id' = UUID, statename = '3rd_party'} = State) ->
-	?DEBUG("Telling agent we're now oncall w/ the 3rd party", []),
+	lager:debug("Telling agent we're now oncall w/ the 3rd party", []),
 	cdr:media_custom(Callrec, '3rd_party', ?cdr_states, []),
 	{{mediapush, '3rd_party'}, State};
 
 case_event_name(EventName, UUID, _Rawcall, _Callrec, #state{statename =  blind_transfered} = State) ->
-	?DEBUG("Blind transfer state doing nothing for event event ~s of uuid ~s", [EventName, UUID]),
+	lager:debug("Blind transfer state doing nothing for event event ~s of uuid ~s", [EventName, UUID]),
 	{noreply, State};
 
 case_event_name("CHANNEL_BRIDGE", UUID, _Rawcall, Callrec, #state{ringchannel = Rpid, uuid = UUID} = State) when is_pid(Rpid) ->
@@ -955,20 +954,20 @@ case_event_name("CHANNEL_BRIDGE", UUID, _Rawcall, Callrec, #state{ringchannel = 
 	RingUUID = freeswitch_ring:get_uuid(State#state.ringchannel),
 	SpawnOncall = spawn_monitor(fun() ->
 		Oot = gen_media:oncall(Callrec#call.source),
-		?DEBUG("Result of oncall:  ~p", [Oot])
+		lager:debug("Result of oncall:  ~p", [Oot])
 	end),
 	{noreply, State#state{statename = oncall, spawn_oncall_mon = SpawnOncall, ringuuid = RingUUID}};
 
 case_event_name("CHANNEL_PARK", Thirdy, _Rawcall, Callrec, #state{
 	statename = 'in_conference_3rdparty', '3rd_party_id' = Thirdy} = State) ->
 		#state{conference_id = Confid, cnode = Fnode, ringuuid = Ringid} = State,
-		?DEBUG("Most likely in the middle of putting the agent in a conference", []),
+		lager:debug("Most likely in the middle of putting the agent in a conference", []),
 	freeswitch:api(Fnode, uuid_transfer, Ringid ++ " 'conference:" ++ Confid ++ "' inline"),
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
 	{{mediapush, 'in_conference_3rdparty'}, State};
 
 case_event_name("CHANNEL_PARK", UUID, _Rawcall, Callrec, #state{statename = hold_conference_3rdparty, '3rd_party_id' = UUID} = State) ->
-	?DEBUG("park of the 3rd party, proll a hold", []),
+	lager:debug("park of the 3rd party, proll a hold", []),
 	cdr:media_custom(Callrec, State#state.statename, ?cdr_states, []),
 	{{mediapush, State#state.statename}, State};
 
@@ -1033,7 +1032,7 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 				[Atom | Acc]
 		catch
 			error:badarg ->
-				?WARNING("Freeswitch requested unknown skill ~s~n", [X]),
+				lager:warning("Freeswitch requested unknown skill ~s~n", [X]),
 				Acc
 		end
 	end, [], util:string_split(SkillList, ",")),
@@ -1067,14 +1066,14 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 	{queue, Queue, NewCall, State#state{queue = Queue, queued=true, allow_voicemail=AllowVM, vm_priority_diff = VMPriorityDiff, moh=Moh, ivroption = Ivropt, statename = inqueue}};
 
 case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid = UUID} = State) ->
-	?DEBUG("Channel hangup ~p", [Callrec#call.id]),
+	lager:debug("Channel hangup ~p", [Callrec#call.id]),
 	case State#state.voicemail of
 		false -> % no voicemail
 			ok;
 		FileName ->
 			case filelib:is_regular(FileName) of
 				true ->
-					?NOTICE("~s left a voicemail", [UUID]),
+					lager:notice("~s left a voicemail", [UUID]),
 					Client = Callrec#call.client,
 
 					VMPriority = Callrec#call.priority +
@@ -1082,7 +1081,7 @@ case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid =
 
 					freeswitch_media_manager:new_voicemail(UUID, FileName, State#state.queue, VMPriority, Client#client.id);
 				false ->
-					?NOTICE("~s hungup without leaving a voicemail", [UUID])
+					lager:notice("~s hungup without leaving a voicemail", [UUID])
 			end
 	end,
 %	{hangup, State2};
@@ -1092,13 +1091,13 @@ case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid =
 	Cause = proplists:get_value("variable_hangup_cause", Rawcall),
 	Who = case proplists:get_value("variable_sip_hangup_disposition", Rawcall) of
 		"recv_bye" ->
-			?DEBUG("Caller hungup ~p, cause ~p", [UUID, Cause]),
+			lager:debug("Caller hungup ~p, cause ~p", [UUID, Cause]),
 			"caller";
 		"send_bye" ->
-			?DEBUG("Agent hungup ~p, cause ~p", [UUID, Cause]),
+			lager:debug("Agent hungup ~p, cause ~p", [UUID, Cause]),
 			"agent";
 		_ ->
-			?DEBUG("I don't know who hung up ~p, cause ~p", [UUID, Cause]),
+			lager:debug("I don't know who hung up ~p, cause ~p", [UUID, Cause]),
 			undefined
 		end,
 	%{noreply, State};
@@ -1111,14 +1110,14 @@ case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid =
 	end;
 
 case_event_name("CHANNEL_DESTROY", UUID, _Rawcall, Callrec, #state{uuid = UUID} = State) ->
-	?DEBUG("Last message this will recieve, channel destroy ~p", [Callrec#call.id]),
+	lager:debug("Last message this will recieve, channel destroy ~p", [Callrec#call.id]),
 	{stop, normal, State};
 
 case_event_name("DTMF", UUID, Rawcall, Callrec, #state{allow_voicemail = VmAllowed, queued = true, uuid = UUID} = State) when VmAllowed =/= false ->
 	case proplists:get_value("DTMF-Digit", Rawcall) of
 		"*" ->
 			% allow the media to go to voicemail
-			?NOTICE("caller requested to go to voicemail ~p", [Callrec#call.id]),
+			lager:notice("caller requested to go to voicemail ~p", [Callrec#call.id]),
 			freeswitch:bgapi(State#state.cnode, uuid_transfer, UUID ++ " 'playback:IVR/prrec.wav,gentones:%(500\\,0\\,500),sleep:600,record:/tmp/${uuid}.wav' inline"),
 			case State#state.ringchannel of
 				undefined ->
@@ -1132,11 +1131,11 @@ case_event_name("DTMF", UUID, Rawcall, Callrec, #state{allow_voicemail = VmAllow
 	end;
 
 case_event_name({error, notfound}, UUID, Rawcall, _Callrec, State) ->
-	?WARNING("event name not found: ~p for ~p", [proplists:get_value("Content-Type", Rawcall), UUID]),
+	lager:warning("event name not found: ~p for ~p", [proplists:get_value("Content-Type", Rawcall), UUID]),
 	{noreply, State};
 
 case_event_name(Ename, UUID, _, _, #state{statename = Statename} = State) ->
-	?DEBUG("Event ~p for ~s unhandled while in state ~p", [Ename, UUID, Statename]),
+	lager:debug("Event ~p for ~s unhandled while in state ~p", [Ename, UUID, Statename]),
 	{noreply, State}.
 
 get_client_options(Proplist) ->
@@ -1166,7 +1165,7 @@ get_exported_variables(Proplist) ->
 get_caller_id(Proplist) ->
  InitCallerIdName = proplists:get_value("Caller-Caller-ID-Name", Proplist),
  InitCallerIdNumber = proplists:get_value("Caller-Caller-ID-Number", Proplist),
- ?DEBUG("Originat cid/cname:  ~p, ~p", [InitCallerIdName, InitCallerIdNumber]),
+ lager:debug("Originat cid/cname:  ~p, ~p", [InitCallerIdName, InitCallerIdNumber]),
  {CallerIdName, CallerIdNumber} = case {InitCallerIdName, InitCallerIdNumber} of
 	 {NixCidName, _} when NixCidName =:= "unknown"; NixCidName =:= undefined ->
 		 {proplists:get_value("variable_sip_from_user_stripped", Proplist, "Unknown"),
@@ -1174,7 +1173,7 @@ get_caller_id(Proplist) ->
 	 _ ->
 		 {InitCallerIdName, InitCallerIdNumber}
  end,
- ?DEBUG("And what shall be used:  ~p  ~p", [CallerIdName,CallerIdNumber]),
+ lager:debug("And what shall be used:  ~p  ~p", [CallerIdName,CallerIdNumber]),
  {CallerIdName, CallerIdNumber}.
 
 get_info(Cnode, UUID) ->
@@ -1205,14 +1204,14 @@ get_info(Cnode, UUID, Retries) when Retries < 2 ->
 				get_exported_variables(Proplist)
 			};
 		timeout ->
-			?WARNING("uuid_dump for ~s timed out. Retrying", [UUID]),
+			lager:warning("uuid_dump for ~s timed out. Retrying", [UUID]),
 			get_info(Cnode, UUID, Retries + 1);
 		{error, Error} ->
-			?WARNING("uuid_dump for ~s errored:  ~p. Retrying", [UUID, Error]),
+			lager:warning("uuid_dump for ~s errored:  ~p. Retrying", [UUID, Error]),
 			get_info(Cnode, UUID, Retries + 1)
 	end;
 get_info(_, UUID, _) ->
-	?WARNING("Too many failures doing uuid_dump for ~p", [UUID]),
+	lager:warning("Too many failures doing uuid_dump for ~p", [UUID]),
 	{"", "", ?DEFAULT_PRIORITY, "Unknown", "Unknown", "", []}.
 
 get_rawcall_int(Key, Rawcall, Default) ->
@@ -1224,7 +1223,7 @@ get_rawcall_int(Key, Rawcall, Default) ->
 				ValInt -> ValInt
 			catch
 				error:badarg ->
-					?WARNING("Invalid value for ~s: ~p", [Key, ValStr]),
+					lager:warning("Invalid value for ~s: ~p", [Key, ValStr]),
 					Default
 			end
 	end.
