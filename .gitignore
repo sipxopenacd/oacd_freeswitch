@@ -1,5 +1,6 @@
 ebin/*
 .eunit/*
 oacd_umbrella/*
-oacd_freeswitch-2.0.0.tar.gz
+erlang-oacd_freeswitch-2.0.0.tar.gz
 rpms/*
+specs/erlang-oacd_freeswitch.spec

@@ -1,4 +1,4 @@
-{application, @PACKAGE_NAME@, [
+{application, @APP_NAME@, [
 	{description, "Freeswitch media plugin for OpenACD"},
 	{vsn, "@PACKAGE_VERSION@"},
 	{modules, []},
