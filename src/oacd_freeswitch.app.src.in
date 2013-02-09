@@ -1,6 +1,6 @@
-{application, oacd_freeswitch, [
+{application, @PACKAGE_NAME@, [
 	{description, "Freeswitch media plugin for OpenACD"},
-	{vsn, "2.0.0"},
+	{vsn, "@PACKAGE_VERSION@"},
 	{modules, []},
 	{registered, [
 		freeswitch_media_manager
