@@ -185,8 +185,26 @@ init([Cnode, DialString, UUID]) ->
 	process_flag(trap_exit, true),
 	Manager = whereis(freeswitch_media_manager),
 	{DNIS, Client, Priority, CidName, CidNum, SIPFrom, ExportVars} = get_info(Cnode, UUID),
-	Call = #call{id = UUID, source = self(), client = Client, priority = Priority, callerid={CidName, CidNum}, dnis=DNIS, media_path = inband},
-	{ok, {#state{statename = inivr, cnode=Cnode, manager_pid = Manager, dialstring = DialString, dial_vars = ["sip_h_X-FromData='"++SIPFrom++"'" | ExportVars], uuid = UUID}, Call, {inivr, [DNIS]}}}.
+
+	CallPs = [
+		{id, UUID},
+		{client, Client}, %% id :: string()
+		{priority, Priority},
+		{caller_id, {CidName, CidNum}},
+		{dnis, DNIS},
+		{media_path, inband}
+	],
+
+	State = #state{
+		statename = inivr,
+		cnode=Cnode,
+		manager_pid = Manager,
+		dialstring = DialString,
+		dial_vars = ["sip_h_X-FromData='"++SIPFrom++"'" | ExportVars],
+		uuid = UUID
+	},
+
+	{ok, State, CallPs}.
 
 %% @private
 -spec(urlpop_getvars/1 :: (State :: #state{}) -> [{binary(), binary()}]).
@@ -1002,7 +1020,10 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 		uuid = UUID, queued = false, statename = Statename} = State) when
 		Statename == inivr ->
 	Queue = proplists:get_value("variable_queue", Rawcall, "default_queue"),
-	Client = {proplists:get_value("variable_brand", Rawcall),[{"dial_vars", State#state.dial_vars} | get_client_options(Rawcall)]},
+	% Client = {proplists:get_value("variable_brand", Rawcall),[{"dial_vars", State#state.dial_vars} | get_client_options(Rawcall)]},
+	Client = proplists:get_value("variable_brand", Rawcall),
+	ClientOpts = [{"dial_vars", State#state.dial_vars} | get_client_options(Rawcall)],
+
 	AllowVM = proplists:get_value("variable_allow_voicemail", Rawcall, false),
 	Moh = case proplists:get_value("variable_queue_moh", Rawcall, "moh") of
 		"silence" ->
@@ -1037,9 +1058,17 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 		end
 	end, [], util:string_split(SkillList, ",")),
 
-	{Calleridname, Calleridnum} = get_caller_id(Rawcall),
+	% {Calleridname, Calleridnum} = get_caller_id(Rawcall),
+	CallerId = get_caller_id(Rawcall),
 	Doanswer = proplists:get_value("variable_erlang_answer", Rawcall, true),
-	NewCall = Callrec#call{client=Client, callerid={Calleridname, Calleridnum}, priority = Priority, skills = Skills},
+	CallPs = [
+		{client, Client},
+		{client_opts, ClientOpts},
+		{caller_id, CallerId},
+		{priority, Priority},
+		{skills, Skills}
+	],
+	% NewCall = Callrec#call{client=Client, callerid={Calleridname, Calleridnum}, priority = Priority, skills = Skills},
 	case Doanswer of
 		"false" ->
 			ok;
@@ -1063,7 +1092,7 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 					{"execute-app-arg", "local_stream://"++Moh}])
 	end,
 	%% tell gen_media to (finally) queue the media
-	{queue, Queue, NewCall, State#state{queue = Queue, queued=true, allow_voicemail=AllowVM, vm_priority_diff = VMPriorityDiff, moh=Moh, ivroption = Ivropt, statename = inqueue}};
+	{queue, Queue, CallPs, State#state{queue = Queue, queued=true, allow_voicemail=AllowVM, vm_priority_diff = VMPriorityDiff, moh=Moh, ivroption = Ivropt, statename = inqueue}};
 
 case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid = UUID} = State) ->
 	lager:debug("Channel hangup ~p", [Callrec#call.id]),
