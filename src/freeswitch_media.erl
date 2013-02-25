@@ -72,6 +72,7 @@
 	handle_ring_stop/4,
 	handle_answer/5,
 	handle_voicemail/4,
+	handle_transfer_outband/5,
 	handle_spy/5,
 	handle_announce/5,
 %% TODO added for testing only (implemented with focus on real Calls - no other media)
@@ -360,6 +361,14 @@ handle_voicemail(_, Call, _, State) ->
 	freeswitch:bgapi(State#state.cnode, uuid_transfer, UUID ++ " 'playback:IVR/prrec.wav,gentones:%(500\\,0\\,500),sleep:600,record:/tmp/${uuid}.wav' inline"),
 	{ok, State#state{statename = inivr, voicemail = "/tmp/"++UUID++".wav"}}.
 
+-spec(handle_transfer_outband/5 :: (Addr :: any(), StateName :: atom(), Call :: #call{}, Internal :: any(), State :: #state{}) -> {'ok', #state{}}).
+handle_transfer_outband(Addr, inqueue_ringing, Callrec, Internal, State) ->
+	{ok, Midstate} = handle_ring_stop(inqueue_ringing, Callrec, undefined, State),
+	handle_transfer_outband(Addr, undefined, Callrec, Internal, Midstate);
+handle_transfer_outband(Addr, Statename, Call, GenMediaState, St) ->
+	{_, St1} = handle_cast({blind_transfer, Addr}, Statename, Call, GenMediaState, St),
+	{ok, St1}.
+
 %% @hidden
 -spec(handle_spy/5 :: (Spy :: {pid(), #agent{}}, StateName :: atom(), Call :: #call{}, Internal :: #state{}, State :: any()) -> {'error', 'bad_agent', #state{}} | {'ok', #state{}}).
 handle_spy({Agent, AgentRec}, oncall, Call, #state{cnode = Fnode, ringchannel = Chan} = Internal, _State) when is_pid(Chan) ->
@@ -618,7 +627,8 @@ handle_cast({audio_level, Target, Level}, _Statename, Call, _GenMediaState, #sta
 	freeswitch:bgapi(State#state.cnode, uuid_audio, ApiStr),
 	{noreply, State};
 
-handle_cast({blind_transfer, Destination}, _Statename, Call, _GenMediaState, #state{statename = oncall} = State) ->
+handle_cast({blind_transfer, Destination}, _Statename, Call, _GenMediaState, #state{statename = Statename} = State)
+		when Statename == inqueue; Statename == oncall ->
 	#state{cnode = Fnode} = State,
 	#call{client = Client, id = UUID} = Call,
 	#client{options= ClientOpts} = Client,
@@ -634,7 +644,9 @@ handle_cast({blind_transfer, Destination}, _Statename, Call, _GenMediaState, #st
 	lager:debug("Transfering ~s to ~s blindly.", [UUID, Dialstring]),
 	freeswitch:api(Fnode, uuid_setvar, UUID ++ " park_after_bridge true"),
 	freeswitch:bgapi(Fnode, uuid_transfer, UUID ++ " 'm:^:bridge:" ++ Dialstring ++ "' inline"),
-	{wrapup, State#state{statename = 'blind_transfered'}};
+
+	%% @todo should go to wrap-up if blind transferred from oncall
+	{noreply, State#state{statename = 'blind_transfered'}};
 
 handle_cast({play_dtmf, []}, _Statename, _Call, _GenMediaState, State) ->
 	lager:debug("Dtmf not played due to no digits", []),
