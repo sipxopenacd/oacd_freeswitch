@@ -10,6 +10,10 @@ buildno = $(shell git describe --long --always | cut -d- -f2-3 | sed 's/-/./g')
 srcdir = .
 rpmbuilddir = rpmbuild
 
+# macro avoids disconcerting error if file/dir doesn't exist
+#  make: [FORCE] Error 1 (ignored)
+rm_rf = ! test -a $1 || rm -rf $1
+
 REBAR ?= rebar
 
 edit = sed \
@@ -23,12 +27,12 @@ compile: src/$(realname).app.src
 	REBAR_SHARED_DEPS=1 $(REBAR) compile skip_deps=true
 
 clean:
-	-rm -rf src/$(realname).app.src
-	-rm -rf ebin
-	-rm -rf $(distdir)
-	-rm -rf $(distdir).tar.gz
+	$(call rm_rf,src/$(realname).app.src)
+	$(call rm_rf,ebin)
+	$(call rm_rf,$(distdir))
+	$(call rm_rf,$(distdir).tar.gz)
 
-src/$(realname).app.src specs/$(package).spec: % : %.in Makefile
+src/$(realname).app.src specs/$(package).spec : % : %.in Makefile
 	$(edit) $(srcdir)/$@.in > $@
 
 check:
@@ -52,7 +56,7 @@ $(distdir): FORCE
 	cp $(wildcard src/*.erl) $(distdir)/src
 	cp $(wildcard include/*.hrl) $(distdir)/include
 	cp $(wildcard contrib/*.erl) $(distdir)/contrib
-	cp specs/$(package).spec.in $(distdir)/specs
+	$(edit) $(srcdir)/specs/$(package).spec.in > $(distdir)/$(package).spec
 
 distcheck: $(distdir).tar.gz
 	gzip -cd $(distdir).tar.gz | tar xvf -
