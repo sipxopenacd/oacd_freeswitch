@@ -118,6 +118,17 @@ dump_state(Mpid) when is_pid(Mpid) ->
 init([Cnode, UUID, File, Queue, Priority, Client]) ->
 	process_flag(trap_exit, true),
 	Manager = whereis(freeswitch_media_manager),
+
+	Ps = [
+		{id, UUID++"-vm"},
+		{type, voice},
+		{priority, Priority},
+		{client, Client},
+		{media_path, inband},
+		{queue, Queue}
+	],
+
+	%% @todo remove dependency to cpx_supervisor for archive path
 	Callrec = #call{id=UUID++"-vm", type=voice, source=self(), priority = Priority, client = Client, media_path = inband},
 	case cpx_supervisor:get_archive_path(Callrec) of
 		none ->
@@ -129,7 +140,7 @@ init([Cnode, UUID, File, Queue, Priority, Client]) ->
 			lager:debug("archiving to ~s~s", [Path, Ext]),
 			file:copy(File, Path++Ext)
 	end,
-	{ok, {#state{cnode=Cnode, manager_pid = Manager, file=File}, {Queue, Callrec}}}.
+	{ok, #state{cnode=Cnode, manager_pid = Manager, file=File}, Ps}.
 
 prepare_endpoint(Agent,Options) ->
 	freeswitch_media:prepare_endpoint(Agent, Options).
@@ -152,35 +163,50 @@ handle_answer(Apid, oncall_ringing, Callrec, _GenMediaState, #state{file=File, x
 	{ok, State#state{agent_pid = Apid, ringchannel = State#state.xferchannel,
 			ringuuid = State#state.xferuuid, xferuuid = undefined, xferchannel = undefined, answered = true}};
 
-handle_answer(Apid, inqueue_ringing, Callrec, _GenMediaState, #state{file=File} = State) ->
+handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} = State) ->
+	RingPid = case GenMediaState of
+		#inqueue_ringing_state{outband_ring_pid = P} -> P;
+		#oncall_ringing_state{outband_ring_pid = P} -> P
+	end,
+
+	RingUUID = case is_pid(RingPid) of
+		true -> freeswitch_ring:get_uuid(RingPid);
+		_ -> ""
+	end,
+
 	lager:notice("Voicemail ~s successfully answered! Time to play ~s", [Callrec#call.id, File]),
 	agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
-	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
+
+	freeswitch:sendmsg(State#state.cnode, RingUUID,
 		[{"call-command", "execute"},
 			{"event-lock", "true"},
 			{"execute-app-name", "phrase"},
 			{"execute-app-arg", "voicemail_say_date,"++integer_to_list(State#state.time)}]),
-	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
+	freeswitch:sendmsg(State#state.cnode, RingUUID,
 		[{"call-command", "execute"},
 			{"event-lock", "true"},
 			{"execute-app-name", "playback"},
 			{"execute-app-arg", File}]),
 	{ok, State#state{agent_pid = Apid, answered = true}}.
 
-handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
-	AgentRec = agent:dump_state(Apid),
-	handle_ring({Apid, AgentRec}, RingData, Callrec, State);
-handle_ring({_Apid, #agent{ring_channel = {undefined, persistent, _}} = Agent}, _RingData, _Callrec, State) ->
-	lager:warning("Agent (~p) does not have it's persistent channel up yet", [Agent#agent.login]),
-	{invalid, State};
+%% Currently not used
+handle_ring(_Apid, _RingData, _Callrec, State) ->
+	{ok, State}.
 
-handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistent, _EndpointType}} = _Agent}, _RingData, _Callrec, State) ->
-	lager:info("Ring channel made things happy, I assume", []),
-	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}};
+% handle_ring(Apid, RingData, Callrec, State) when is_pid(Apid) ->
+% 	AgentRec = agent:dump_state(Apid),
+% 	handle_ring({Apid, AgentRec}, RingData, Callrec, State);
+% handle_ring({_Apid, #agent{ring_channel = {undefined, persistent, _}} = Agent}, _RingData, _Callrec, State) ->
+% 	lager:warning("Agent (~p) does not have it's persistent channel up yet", [Agent#agent.login]),
+% 	{invalid, State};
 
-handle_ring({Apid, #agent{ring_channel = {EndpointPid, transient, _EndpintType}} = _Agent}, _RingData, _Callrec, State) when is_pid(EndpointPid) ->
-	lager:info("Agent already has transient ring pid up:  ~p", [EndpointPid]),
-	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}}.
+% handle_ring({Apid, #agent{ring_channel = {EndpointPid, persistent, _EndpointType}} = _Agent}, _RingData, _Callrec, State) ->
+% 	lager:info("Ring channel made things happy, I assume", []),
+% 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}};
+
+% handle_ring({Apid, #agent{ring_channel = {EndpointPid, transient, _EndpintType}} = _Agent}, _RingData, _Callrec, State) when is_pid(EndpointPid) ->
+% 	lager:info("Agent already has transient ring pid up:  ~p", [EndpointPid]),
+% 	{ok, [{"caseid", State#state.caseid}], State#state{ringchannel = EndpointPid, ringuuid = freeswitch_ring:get_uuid(EndpointPid), agent_pid = Apid}}.
 
 handle_ring_stop(_Statename, _Callrec, _GenMediaState, State) ->
 	lager:debug("hanging up ring channel", []),
