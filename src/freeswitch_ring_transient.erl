@@ -174,7 +174,7 @@ handle_event("CHANNEL_BRIDGE", _Data, {Fsnode, _UUID}, #state{call = #call{type 
 	end;
 
 handle_event("CHANNEL_HANGUP", _Data, _Fsref, State) ->
-	lager:warning("Hangup event, stopping", []),
+	lager:info("Hangup event, stopping", []),
 	{stop, normal, State};
 
 handle_event(Event, _, _, State) ->
