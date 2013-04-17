@@ -240,17 +240,12 @@ handle_announce(Announcement, _StateName, Call, _Internal, State) ->
 	-> {'ok', freeswitch_ring_endpoint()}).
 prepare_endpoint(Agent, Options) ->
 	{Node, Dialstring, Dest} = freeswitch_media_manager:get_ring_data(Agent, Options),
+	RingOpts = [{freeswitch_node, Node}, {dialstring, Dialstring}, {destination, Dest}],
 	case proplists:get_value(persistant, Options) of
 		true ->
-			freeswitch_ring:start(Node, freeswitch_persistant_ring, [
-				{destination, Dest},
-				{dialstring, Dialstring},
-				persistant
-			]);
+			cpx_endpoint:start(freeswitch_ring, [{module, freeswitch_ring_persistent}|RingOpts]);
 		_ ->
-			{ok, {freeswitch_ring, start, [Node, freeswitch_ring_transient, [
-				{destination, Dest},
-				{dialstring, Dialstring}]]}}
+			{ok, {freeswitch_ring, [{module, freeswitch_ring_transient}|RingOpts]}}
 	end.
 
 %%--------------------------------------------------------------------

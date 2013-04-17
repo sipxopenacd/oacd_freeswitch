@@ -70,7 +70,7 @@
 init(_Fsref, Options) ->
 	Call = proplists:get_value(call, Options),
 	Agent = proplists:get_value(agent, Options),
-	Chan = proplists:get_value(agent_channel, Options),
+	Chan = proplists:get_value(agent_channel_pid, Options),
 	case Call of
 		undefined -> ok;
 		_ when is_record(Call, call) ->
@@ -99,16 +99,16 @@ handle_cast({agent_state, _AState}, {FsNode, UUID}, State) ->
 	% live fast, die young, leave a beautiful exit message.
 	freeswitch:bgapi(FsNode, uuid_kill, UUID),
 	{stop, normal, State};
-handle_cast(hangup, {FsNode, UUID}, State) ->
-	freeswitch:sendmsg(FsNode, UUID,
-		[{"call-command", "hangup"}]),
-	{stop, normal, State};
 handle_cast(_Msg, _FsRef, State) ->
 	{noreply, State}.
 
 %% =====
 %% handle_info
 %% =====
+handle_info({cpx_endpoint, hangup}, {FsNode, UUID}, State) ->
+	freeswitch:sendmsg(FsNode, UUID,
+		[{"call-command", "hangup"}]),
+	{stop, normal, State};
 handle_info({stop, Reason}, _FsRef, State) ->
 	{stop, Reason, State};
 handle_info(_Msg, _FsRef, State) ->

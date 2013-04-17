@@ -97,10 +97,8 @@
 
 %% API
 -export([
-	start/3,
-	start/6,
-	start_link/3,
-	start_link/6,
+	start/1,
+	start_link/1,
 	hangup/1,
 	get_uuid/1,
 	ring/3
@@ -159,6 +157,8 @@
 -type(dnis_opt() :: {'dnis', string()}).
 -type(no_oncall_on_bridge_opt() :: 'no_oncall_on_bridge').
 -type(start_opt() ::
+	{module, atom()} |
+	{freeswitch_node, atom()} |
 	call_opt() |
 	caller_id_opt() |
 	ringout_opt() |
@@ -171,35 +171,28 @@
 ).
 -type(start_opts() :: [start_opt()]).
 
--type(uuid() :: string()).
--type(fs_refs() :: {atom(), uuid()}).
--type(callback_fun() ::
-	{'init', fun((fs_refs(), [any()]) -> {'ok', any()})} |
-	{'handle_event', fun((string(), [{string(), string()}], fs_refs(), any()) -> any())} |
-	{'handle_call', fun((any(), {pid(), reference()}, fs_refs(), any()) -> any())} |
-	{'handle_cast', fun((any(), fs_refs(), any()) -> any())} |
-	{'handle_info', fun((any(), fs_refs(), any()) -> any())} |
-	{'terminate', fun((any(), any()) -> any())} |
-	{'change_code', fun((any(), any(), any()) -> any())}
-).
--type(callback_funs() :: [callback_fun()]).
--type(callbacks() :: atom() | callback_funs()).
+% -spec(start/3 :: (Fsnode :: atom(), Callbacks :: callbacks(), Options :: start_opts()) -> {'ok', pid()}).
+% start(Fsnode, Callbacks, Options) ->
+% 	gen_server:start(?MODULE, [Fsnode, Callbacks, Options], []).
 
--spec(start/3 :: (Fsnode :: atom(), Callbacks :: callbacks(), Options :: start_opts()) -> {'ok', pid()}).
-start(Fsnode, Callbacks, Options) ->
-	gen_server:start(?MODULE, [Fsnode, Callbacks, Options], []).
+% start(Agent, Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
+% 	NewOptions = [{agent, Agent}, {agent_channel, Chan}, {call, Call} | Options],
+% 	gen_server:start(?MODULE, [Fsnode, Callbacks, NewOptions], []).
 
-start(Agent, Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
-	NewOptions = [{agent, Agent}, {agent_channel, Chan}, {call, Call} | Options],
-	gen_server:start(?MODULE, [Fsnode, Callbacks, NewOptions], []).
+-spec start/1 :: (start_opts()) -> {ok, pid()}.
+start(Opts) ->
+	gen_server:start(?MODULE, Opts, []).
 
--spec(start_link/3 :: (Fsnode :: atom(), Callbacks :: atom() | callbacks(), Options :: start_opts()) -> {'ok', pid()}).
-start_link(Fsnode, Callbacks, Options) ->
-	gen_server:start_link(?MODULE, [Fsnode, Callbacks, Options], []).
+% -spec(start_link/3 :: (Fsnode :: atom(), Callbacks :: atom() | callbacks(), Options :: start_opts()) -> {'ok', pid()}).
+% start_link(Fsnode, Callbacks, Options) ->
+% 	gen_server:start_link(?MODULE, [Fsnode, Callbacks, Options], []).
 
-start_link(_Agent, _Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
-	NewOptions = [{call, Call} | Options],
-	gen_server:start_link(?MODULE, [Fsnode, Callbacks, NewOptions], []).
+% start_link(_Agent, _Chan, Call, Fsnode, Callbacks, Options) when is_record(Call, call) ->
+% 	NewOptions = [{call, Call} | Options],
+% 	gen_server:start_link(?MODULE, [Fsnode, Callbacks, NewOptions], []).
+
+start_link(Opts) ->
+	gen_server:start_link(?MODULE, Opts, []).
 
 %% @doc Used by erlang to detmine if a module implementing this behavor is
 %% valid.
@@ -241,7 +234,10 @@ ring(RingPid, CallId, Ringout) ->
 %		_ -> Options
 %	end,
 %	init([Fsnode, Callbacks, NewOpts]);
-init([Fsnode, Module, Options]) when is_atom(Module) ->
+init(Options) ->
+	Module = proplists:get_value(module, Options),
+	Fsnode = proplists:get_value(freeswitch_node, Options),
+
 	Callbacks = #callbacks{
 		init = fun(FsRefs, Args) -> Module:init(FsRefs, Args) end,
 		handle_event = fun(Event, Data, FsRefs, InState) -> Module:handle_event(Event, Data, FsRefs, InState) end,
@@ -251,21 +247,9 @@ init([Fsnode, Module, Options]) when is_atom(Module) ->
 		terminate = fun(Reason, FsRefs, InState) -> Module:terminate(Reason, FsRefs, InState) end,
 		code_change = fun(OldVsn, InState, Extra) -> Module:change_code(OldVsn, InState, Extra) end
 	},
-	init([Fsnode, Callbacks, Options]);
-init([Fsnode, CallbackList, Options]) when is_list(CallbackList) ->
-	Callbacks = #callbacks{
-		init = proplists:get_value(init, CallbackList, fun(_, _) -> {ok, [], <<"dummy_state">>} end),
-		handle_event = proplists:get_value(handle_event, CallbackList, fun(_, _, _, InState) -> {noreply, InState} end),
-		handle_call = proplists:get_value(handle_call, CallbackList, fun(_, _, _, InState) -> {reply, ok, InState} end),
-		handle_cast = proplists:get_value(handle_cast, CallbackList, fun(_, _, InState) -> {noreply, InState} end),
-		handle_info = proplists:get_value(handle_info, CallbackList, fun(_, _, InState) -> {noreply, InState} end),
-		terminate = proplists:get_value(handle_info, CallbackList, fun(_, _, _) -> ok end),
-		code_change = proplists:get_value(code_change, CallbackList, fun(_, InState, _) -> {ok, InState} end)
-	},
-	init([Fsnode, Callbacks, Options]);
-init([Fsnode, #callbacks{init = InitFun} = Callbacks, Options]) ->
-%init([Fnode, AgentRec, Apid, Fun, Options]) ->
-%init([Fnode, AgentRec, Apid, Call, Ringout, Fun, Options]) when is_record(Call, call) ->
+
+	InitFun = Callbacks#callbacks.init,
+
 	case freeswitch:api(Fsnode, create_uuid) of
 		{ok, UUID} ->
 			Callrec = proplists:get_value(call, Options),
