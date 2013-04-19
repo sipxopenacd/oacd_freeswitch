@@ -173,9 +173,16 @@ handle_event("CHANNEL_BRIDGE", _Data, {Fsnode, _UUID}, #state{call = #call{type 
 			{stop, normal, State}
 	end;
 
-handle_event("CHANNEL_HANGUP", _Data, _Fsref, State) ->
-	lager:info("Hangup event, stopping", []),
-	{stop, normal, State};
+handle_event("CHANNEL_HANGUP", Data, _Fsref, State) ->
+	HangupCause = proplists:get_value("Hangup-Cause", Data),
+	SipStatus = proplists:get_value("variable_sip_term_status", Data),
+	SipCause = proplists:get_value("variable_sip_term_cause", Data),
+	StopReason = case {HangupCause, SipStatus, SipCause} of
+		{"RECOVERY_ON_TIMER_EXPIRE", "408", "102"} -> call_expired;
+		_ -> normal
+	end,
+	lager:info("Channel hangup event with cause ~p; stopping with reason ~p", [[HangupCause, SipStatus, SipCause], StopReason]),
+	{stop, StopReason, State};
 
 handle_event(Event, _, _, State) ->
 	lager:debug("Ignoring event ~p", [Event]),
