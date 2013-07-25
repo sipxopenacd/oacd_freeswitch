@@ -187,7 +187,7 @@ handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} =
 			{"event-lock", "true"},
 			{"execute-app-name", "playback"},
 			{"execute-app-arg", File}]),
-	{ok, State#state{agent_pid = Apid, answered = true}}.
+	{ok, State#state{agent_pid = Apid, answered = true, ringuuid = RingUUID}}.
 
 %% Currently not used
 handle_ring(_Apid, _RingData, _Callrec, State) ->
@@ -270,6 +270,11 @@ handle_agent_transfer(AgentPid, Timeout, Call, State) ->
 handle_warm_transfer_begin(_Number, _Call, State) ->
 	{invalid, State}.
 
+handle_wrapup(_From, _StateName, #call{media_path = inband} = _Call, _GenMediaState, State) ->
+	lager:debug("Handling wrapup request", []),
+	% TODO This could prolly stand to be a bit more elegant.
+	freeswitch:api(State#state.cnode, uuid_kill, State#state.ringuuid),
+	{hangup, State};
 handle_wrapup(_From, _Statename, _Call, _GenMediaState, State) ->
 	% TODO figure out what to do if anything.  If nothing, remove todo.
 	{ok, State}.
