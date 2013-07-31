@@ -175,7 +175,8 @@ handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} =
 	end,
 
 	lager:notice("Voicemail ~s successfully answered! Time to play ~s", [Callrec#call.id, File]),
-	agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
+	NewCallRec = Callrec#call{media_id = RingUUID},
+	agent_channel:media_push(Apid, NewCallRec, {mediaload, NewCallRec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
 
 	freeswitch:sendmsg(State#state.cnode, RingUUID,
 		[{"call-command", "execute"},
