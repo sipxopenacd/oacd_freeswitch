@@ -83,6 +83,8 @@
 	handle_call/6,
 	handle_cast/5,
 	handle_info/5,
+	handle_hold/2,
+	handle_unhold/2,
 	terminate/5,
 	code_change/4]).
 
@@ -874,6 +876,26 @@ handle_info(Info, _StateName, Call, _Internal, State) ->
 	{noreply, State}.
 
 %%--------------------------------------------------------------------
+%% handle_hold
+%%--------------------------------------------------------------------
+
+handle_hold(_GenMediaState, #state{ringuuid = RingUUID} = State)
+		when is_list(RingUUID) ->
+	lager:debug("Calling uuid_hold with args ~p", [RingUUID]),
+	freeswitch:api(State#state.cnode, uuid_hold, RingUUID),
+	{ok, State#state{hold = hold}}.
+
+%%--------------------------------------------------------------------
+%% handle_unhold
+%%--------------------------------------------------------------------
+
+handle_unhold(_GenMediaState, #state{ringuuid = RingUUID} = State)
+		when is_list(RingUUID) ->
+	lager:debug("Calling uuid_hold with args ~p", ["off " ++ RingUUID]),
+	freeswitch:api(State#state.cnode, uuid_hold, "off " ++ RingUUID),
+	{ok, State#state{hold = undefined}}.
+
+%%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
 %%--------------------------------------------------------------------
 %% @private
@@ -1263,3 +1285,27 @@ get_rawcall_int(Key, Rawcall, Default) ->
 					Default
 			end
 	end.
+
+-ifdef(TEST).
+
+hold_media_test_() ->
+	{setup, fun() ->
+		meck:new(freeswitch),
+		meck:expect(freeswitch, api, 3, ok)
+	end, fun(_) ->
+		meck:unload()
+	end, [{"hold media", fun() ->
+		Node = 'freeswitch@127.0.0.1',
+		RingUUID = "ring-uuid",
+		St = #state{cnode = Node, ringuuid = RingUUID, hold = undefined},
+		?assertEqual({ok, St#state{hold=hold}}, handle_hold(gm_state, St)),
+		?assert(meck:called(freeswitch, api, [Node, uuid_hold, RingUUID]))
+	end}, {"unhold media", fun() ->
+		Node = 'freeswitch@127.0.0.1',
+		RingUUID = "ring-uuid",
+		St = #state{cnode = Node, ringuuid = RingUUID, hold = hold},
+		?assertEqual({ok, St#state{hold=undefined}}, handle_unhold(gm_state, #state{cnode = Node, ringuuid = RingUUID})),
+		?assert(meck:called(freeswitch, api, [Node, uuid_hold, "off " ++ RingUUID]))
+	end}]}.
+
+-endif.

@@ -64,6 +64,8 @@
 	handle_call/6,
 	handle_cast/5,
 	handle_info/5,
+	handle_hold/2,
+	handle_unhold/2,
 	handle_warm_transfer_begin/3,
 	terminate/5,
 	code_change/4]).
@@ -386,6 +388,20 @@ handle_info(call_hangup, _Statename, _Call, _GenMediaState, State) ->
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
 	lager:info("unhandled info ~p", [Info]),
 	{noreply, State}.
+
+%%--------------------------------------------------------------------
+%% handle_hold
+%%--------------------------------------------------------------------
+
+handle_hold(_GenmediaState, State) ->
+	{ok, State}.
+
+%%--------------------------------------------------------------------
+%% handle_unhold
+%%--------------------------------------------------------------------
+
+handle_unhold(_GenmediaState, State) ->
+	{ok, State}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
