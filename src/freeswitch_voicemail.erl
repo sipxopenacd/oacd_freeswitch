@@ -393,6 +393,9 @@ handle_info(call_hangup, _Statename, _Call, _GenMediaState, State) ->
 	% stop.
 	{stop, normal, State};
 
+handle_info({event, playback_stop}, _Statename, _Call, _GenMediaState, State) ->
+	{noreply, State#state{playback = stop}};
+
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
 	lager:info("unhandled info ~p", [Info]),
 	{noreply, State}.
@@ -417,6 +420,14 @@ handle_unhold(_GenmediaState, State) ->
 
 handle_play(_GenmediaState, State) when State#state.playback =:= pause ->
 	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+	{ok, State#state{playback = play}};
+
+handle_play(_GenmediaState, State) when State#state.playback =:= stop ->
+	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
+		[{"call-command", "execute"},
+			{"event-lock", "true"},
+			{"execute-app-name", "playback"},
+			{"execute-app-arg", State#state.file}]),
 	{ok, State#state{playback = play}};
 
 handle_play(_GenmediaState, State) ->
