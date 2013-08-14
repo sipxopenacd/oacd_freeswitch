@@ -91,7 +91,8 @@
 	file = erlang:error({undefined, file}):: string(),
 	answered = false :: boolean(),
 	caseid :: string() | 'undefined',
-	time = util:now() :: integer()
+	time = util:now() :: integer(),
+	playback = stop :: stop | play | pause
 }).
 
 -type(state() :: #state{}).
@@ -169,7 +170,7 @@ handle_answer(Apid, oncall_ringing, Callrec, _GenMediaState, #state{file=File, x
 			{"execute-app-name", "playback"},
 			{"execute-app-arg", File}]),
 	{ok, State#state{agent_pid = Apid, ringchannel = State#state.xferchannel,
-			ringuuid = State#state.xferuuid, xferuuid = undefined, xferchannel = undefined, answered = true}};
+			ringuuid = State#state.xferuuid, xferuuid = undefined, xferchannel = undefined, answered = true, playback = play}};
 
 handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} = State) ->
 	RingPid = case GenMediaState of
@@ -196,7 +197,7 @@ handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} =
 			{"event-lock", "true"},
 			{"execute-app-name", "playback"},
 			{"execute-app-arg", File}]),
-	{ok, State#state{agent_pid = Apid, answered = true, ringuuid = RingUUID}}.
+	{ok, State#state{agent_pid = Apid, answered = true, ringuuid = RingUUID, playback = play}}.
 
 %% Currently not used
 handle_ring(_Apid, _RingData, _Callrec, State) ->
@@ -414,16 +415,22 @@ handle_unhold(_GenmediaState, State) ->
 %% handle_play
 %%--------------------------------------------------------------------
 
-handle_play(_GenmediaState, State) ->
+handle_play(_GenmediaState, State) when State#state.playback =:= pause ->
 	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+	{ok, State#state{playback = play}};
+
+handle_play(_GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
 %% handle_pause
 %%--------------------------------------------------------------------
 
-handle_pause(_GenmediaState, State) ->
+handle_pause(_GenmediaState, State) when State#state.playback =:= play ->
 	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+	{ok, State#state{playback = pause}};
+
+handle_pause(_GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
