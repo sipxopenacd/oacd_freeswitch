@@ -30,6 +30,7 @@
 -module(freeswitch_voicemail).
 
 -behaviour(gen_media).
+-behaviour(gen_media_playable).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -69,6 +70,11 @@
 	handle_warm_transfer_begin/3,
 	terminate/5,
 	code_change/4]).
+
+%% gen_media_playable callbacks
+-export([
+	handle_play/2,
+	handle_pause/2]).
 
 -record(state, {
 	cook :: pid() | 'undefined',
@@ -402,6 +408,22 @@ handle_hold(_GenmediaState, State) ->
 %%--------------------------------------------------------------------
 
 handle_unhold(_GenmediaState, State) ->
+	{ok, State}.
+
+%%--------------------------------------------------------------------
+%% handle_play
+%%--------------------------------------------------------------------
+
+handle_play(_GenmediaState, State) ->
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+	{ok, State}.
+
+%%--------------------------------------------------------------------
+%% handle_pause
+%%--------------------------------------------------------------------
+
+handle_pause(_GenmediaState, State) ->
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
 	{ok, State}.
 
 %%--------------------------------------------------------------------
