@@ -393,7 +393,10 @@ handle_info(call_hangup, _Statename, _Call, _GenMediaState, State) ->
 	% stop.
 	{stop, normal, State};
 
-handle_info({event, playback_stop}, _Statename, _Call, _GenMediaState, State) ->
+handle_info({event, playback_stop, Call}, _Statename, _, _GenMediaState, State) ->
+	Apid = State#state.agent_pid,
+
+	agent_channel:media_push(Apid, Call, {mediastop, Call, []}),
 	{noreply, State#state{playback = stop}};
 
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->

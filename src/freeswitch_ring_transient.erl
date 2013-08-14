@@ -184,8 +184,8 @@ handle_event("CHANNEL_HANGUP", Data, _Fsref, State) ->
 	lager:info("Channel hangup event with cause ~p; stopping with reason ~p", [[HangupCause, SipStatus, SipCause], StopReason]),
 	{stop, StopReason, State};
 
-handle_event("PLAYBACK_STOP", _Data, _Fsref, #state{call = #call{source = CallPid}} = State) ->
-	CallPid ! {event, playback_stop},
+handle_event("PLAYBACK_STOP", _Data, _Fsref, #state{call = #call{source = CallPid} = Call} = State) ->
+	CallPid ! {event, playback_stop, Call},
 	{noreply, State};
 
 
