@@ -73,8 +73,8 @@
 
 %% gen_media_playable callbacks
 -export([
-	handle_play/2,
-	handle_pause/2]).
+	handle_play/3,
+	handle_pause/3]).
 
 -record(state, {
 	cook :: pid() | 'undefined',
@@ -421,30 +421,35 @@ handle_unhold(_GenmediaState, State) ->
 %% handle_play
 %%--------------------------------------------------------------------
 
-handle_play(_GenmediaState, State) when State#state.playback =:= pause ->
+handle_play(_Call, _GenmediaState, State) when State#state.playback =:= pause ->
 	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
 	{ok, State#state{playback = play}};
 
-handle_play(_GenmediaState, State) when State#state.playback =:= stop ->
+%% replay
+handle_play(Call, GenmediaState, State) when State#state.playback =:= stop ->
+	Apid = State#state.agent_pid,
+
 	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
 		[{"call-command", "execute"},
 			{"event-lock", "true"},
 			{"execute-app-name", "playback"},
 			{"execute-app-arg", State#state.file}]),
+
+	agent_channel:media_push(Apid, Call, {mediaload, Call, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
 	{ok, State#state{playback = play}};
 
-handle_play(_GenmediaState, State) ->
+handle_play(_Call, _GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
 %% handle_pause
 %%--------------------------------------------------------------------
 
-handle_pause(_GenmediaState, State) when State#state.playback =:= play ->
+handle_pause(_Call, _GenmediaState, State) when State#state.playback =:= play ->
 	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
 	{ok, State#state{playback = pause}};
 
-handle_pause(_GenmediaState, State) ->
+handle_pause(_Call, _GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
