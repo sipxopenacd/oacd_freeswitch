@@ -73,6 +73,7 @@
 %% gen_media_playable callbacks
 -export([
 	handle_play/3,
+	handle_play/4,
 	handle_pause/3,
 	handle_seek/4]).
 
@@ -449,6 +450,38 @@ handle_play(Call, _GenmediaState, State) when State#state.playback =:= stop ->
 	{ok, State#state{playback = play}};
 
 handle_play(_Call, _GenmediaState, State) ->
+	{ok, State}.
+
+handle_play(Location, _Call, _GenmediaState, State) when State#state.playback =:= play ->
+	lager:info("While playing, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+	{ok, State};
+
+handle_play(Location, _Call, _GenmediaState, State) when State#state.playback =:= pause ->
+	lager:info("While paused, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+
+	% unpause
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+	{ok, State#state{playback = play}};
+
+handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= stop ->
+	lager:info("While stop, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+
+	Apid = State#state.agent_pid,
+
+	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
+		[{"call-command", "execute"},
+			{"event-lock", "true"},
+			{"execute-app-name", "playback"},
+			{"execute-app-arg", State#state.file}]),
+	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+
+	agent_channel:media_push(Apid, Call, {mediaload, Call, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>}]}),
+
+	{ok, State#state{playback = play}};
+
+handle_play(_Location, _Call, _GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
