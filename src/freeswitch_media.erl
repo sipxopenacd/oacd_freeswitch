@@ -1124,6 +1124,10 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 	{queue, Queue, CallPs, State#state{queue = Queue, queued=true, allow_voicemail=AllowVM, vm_priority_diff = VMPriorityDiff, moh=Moh, ivroption = Ivropt, statename = inqueue}};
 
 case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid = UUID} = State) ->
+	RecordMs = proplists:get_value("variable_record_ms", Rawcall),
+	RecordSamples = proplists:get_value("variable_record_samples", Rawcall),
+	Info = [{record_ms, RecordMs}, {record_samples, RecordSamples}],
+
 	lager:debug("Channel hangup ~p", [Callrec#call.id]),
 	case State#state.voicemail of
 		false -> % no voicemail
@@ -1137,7 +1141,7 @@ case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid =
 					VMPriority = Callrec#call.priority +
 						State#state.vm_priority_diff,
 
-					freeswitch_media_manager:new_voicemail(UUID, FileName, State#state.queue, VMPriority, Client#client.id);
+					freeswitch_media_manager:new_voicemail(UUID, FileName, State#state.queue, VMPriority, Client#client.id, Info);
 				false ->
 					lager:notice("~s hungup without leaving a voicemail", [UUID])
 			end
