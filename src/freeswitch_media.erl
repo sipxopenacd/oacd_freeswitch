@@ -1053,6 +1053,8 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 	Client = proplists:get_value("variable_brand", Rawcall),
 	ClientOpts = [{"dial_vars", State#state.dial_vars} | get_client_options(Rawcall)],
 
+	UrlVars = get_url_variables(Rawcall),
+
 	AllowVM = proplists:get_value("variable_allow_voicemail", Rawcall, false),
 	Moh = case proplists:get_value("variable_queue_moh", Rawcall, "moh") of
 		"silence" ->
@@ -1095,6 +1097,7 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 		{client_opts, ClientOpts},
 		{caller_id, CallerId},
 		{priority, Priority},
+		{url_vars, UrlVars},
 		{skills, Skills}
 	],
 	% NewCall = Callrec#call{client=Client, callerid={Calleridname, Calleridnum}, priority = Priority, skills = Skills},
@@ -1195,6 +1198,15 @@ case_event_name({error, notfound}, UUID, Rawcall, _Callrec, State) ->
 case_event_name(Ename, UUID, _, _, #state{statename = Statename} = State) ->
 	lager:debug("Event ~p for ~s unhandled while in state ~p", [Ename, UUID, Statename]),
 	{noreply, State}.
+
+get_url_variables(Proplist) ->
+	lists:foldl(
+		fun({"variable_oa_" ++ VarKey, Val}, List) -> List ++ [{list_to_atom(VarKey), Val}];
+		(_,List) -> List
+		end,
+		[],
+		Proplist
+	).
 
 get_client_options(Proplist) ->
 	ExportVars = string:tokens(proplists:get_value("variable_export_vars", Proplist, ""), ","),
