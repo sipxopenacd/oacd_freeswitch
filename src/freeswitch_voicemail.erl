@@ -74,8 +74,7 @@
 -export([
 	handle_play/3,
 	handle_play/4,
-	handle_pause/3,
-	handle_seek/4]).
+	handle_pause/3]).
 
 -record(state, {
 	cook :: pid() | 'undefined',
@@ -163,50 +162,46 @@ init([Cnode, UUID, File, Queue, Priority, Client, Info]) ->
 prepare_endpoint(Agent,Options) ->
 	freeswitch_media:prepare_endpoint(Agent, Options).
 
-handle_answer(Apid, oncall_ringing, Callrec, _GenMediaState, #state{file=File, xferchannel = XferChannel} = State) when is_pid(XferChannel) ->
-	link(XferChannel),
+%% start playback
+handle_answer(Apid, oncall_ringing, Call, _GenMediaState, #state{xferchannel=XferChan} = State) when is_pid(XferChan) ->
+	Node = State#state.cnode,
+	XferUUID = State#state.xferuuid,
+	File = State#state.file,
+	PlaybackMs = State#state.playback_ms,
+	link(XferChan),
 	%freeswitch_ring:hangup(State#state.ringchannel),
-	agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>},{<<"title">>,<<>>}]}),
-	lager:notice("Voicemail ~s successfully transferred! Time to play ~s", [Callrec#call.id, File]),
-	freeswitch:sendmsg(State#state.cnode, State#state.xferuuid,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "phrase"},
-			{"execute-app-arg", "voicemail_say_date,"++integer_to_list(State#state.time)}]),
-	freeswitch:sendmsg(State#state.cnode, State#state.xferuuid,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "playback"},
-			{"execute-app-arg", File}]),
-	{ok, State#state{agent_pid = Apid, ringchannel = State#state.xferchannel,
-			ringuuid = State#state.xferuuid, xferuuid = undefined, xferchannel = undefined, answered = true, playback = play}};
+	% freeswitch:sendmsg(State#state.cnode, State#state.xferuuid,
+	% 	[{"call-command", "execute"},
+	% 		{"event-lock", "true"},
+	% 		{"execute-app-name", "phrase"},
+	% 		{"execute-app-arg", "voicemail_say_date,"++integer_to_list(State#state.time)}]),
+	lager:info("Voicemail ~s successfully transferred! Time to play ~s", [Call#call.id, File]),
+	start_playback(Node, XferUUID, File),
+	start_event(Apid, Call, PlaybackMs, 0),
+	{ok, State#state{agent_pid = Apid, ringchannel = XferChan,
+			ringuuid = XferUUID, xferuuid = undefined, xferchannel = undefined, answered = true, playback = play}};
 
-handle_answer(Apid, inqueue_ringing, Callrec, GenMediaState, #state{file=File} = State) ->
+%% start playback
+handle_answer(Apid, inqueue_ringing, Call, GenMediaState, State) ->
+	Node = State#state.cnode,
+	File = State#state.file,
+	PlaybackMs = State#state.playback_ms,
 	RingPid = case GenMediaState of
 		#inqueue_ringing_state{outband_ring_pid = P} -> P;
 		#oncall_ringing_state{outband_ring_pid = P} -> P
 	end,
-
 	RingUUID = case is_pid(RingPid) of
 		true -> freeswitch_ring:get_uuid(RingPid);
 		_ -> ""
 	end,
-
-	lager:notice("Voicemail ~s successfully answered! Time to play ~s", [Callrec#call.id, File]),
-	NewCallRec = Callrec#call{media_id = RingUUID},
-	agent_channel:media_push(Apid, NewCallRec, {mediaload, NewCallRec, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>},{<<"title">>,<<>>}]}),
-
-	freeswitch:sendmsg(State#state.cnode, RingUUID,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "phrase"},
-			{"execute-app-arg", "voicemail_say_date,"++integer_to_list(State#state.time)}]),
-	freeswitch:sendmsg(State#state.cnode, RingUUID,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "playback"},
-			{"execute-app-arg", File}]),
-
+	% freeswitch:sendmsg(State#state.cnode, RingUUID,
+	% 	[{"call-command", "execute"},
+	% 		{"event-lock", "true"},
+	% 		{"execute-app-name", "phrase"},
+	% 		{"execute-app-arg", "voicemail_say_date,"++integer_to_list(State#state.time)}]),
+	lager:info("Voicemail ~s successfully answered! Time to play ~s", [Call#call.id, File]),
+	start_playback(Node, RingUUID, File),
+	start_event(Apid, Call, PlaybackMs, 0),
 	{ok, State#state{agent_pid = Apid, answered = true, ringuuid = RingUUID, playback = play}}.
 
 %% Currently not used
@@ -333,11 +328,7 @@ handle_cast({set_caseid, CaseID}, _, _Call, _, State) ->
 	{noreply, State#state{caseid = CaseID}};
 
 handle_cast(replay, _, _Call, _, #state{file = File} = State) ->
-	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "playback"},
-			{"execute-app-arg", File}]),
+	start_playback(State#state.cnode, State#state.ringuuid, File),
 	{noreply, State};
 
 %% web api
@@ -405,8 +396,9 @@ handle_info(call_hangup, _Statename, _Call, _GenMediaState, State) ->
 
 handle_info({event, playback_stop, Call}, _Statename, _, _GenMediaState, State) ->
 	Apid = State#state.agent_pid,
+	PlaybackMs = State#state.playback_ms,
 
-	agent_channel:media_push(Apid, Call, {mediastop, Call, []}),
+	stop_event(Apid, Call, PlaybackMs),
 	{noreply, State#state{playback = stop}};
 
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
@@ -431,54 +423,64 @@ handle_unhold(_GenmediaState, State) ->
 %% handle_play
 %%--------------------------------------------------------------------
 
-handle_play(_Call, _GenmediaState, State) when State#state.playback =:= pause ->
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+%% resume
+handle_play(Call, _GenmediaState, #state{playback=Playback} = State) when Playback =:= pause ->
+	Apid = State#state.agent_pid,
+	Node = State#state.cnode,
+	UUID = State#state.ringuuid, 
+	PlaybackMs = State#state.playback_ms,
+	resume_playback(Node, UUID),
+	resume_event(Apid, Call, PlaybackMs),
 	{ok, State#state{playback = play}};
 
 %% replay
 handle_play(Call, _GenmediaState, State) when State#state.playback =:= stop ->
 	Apid = State#state.agent_pid,
-
-	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "playback"},
-			{"execute-app-arg", State#state.file}]),
-
-	agent_channel:media_push(Apid, Call, {mediaload, Call, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>}]}),
-
+	Node = State#state.cnode,
+	UUID = State#state.ringuuid,
+	File = State#state.file,
+	PlaybackMs = State#state.playback_ms,
+	lager:info("Voicemail playback started"),
+	start_playback(Node, UUID, File),
+	start_event(Apid, Call, PlaybackMs, 0),
 	{ok, State#state{playback = play}};
 
 handle_play(_Call, _GenmediaState, State) ->
+	lager:debug("Voicemail playback already started; ignoring request"),
 	{ok, State}.
 
-handle_play(Location, _Call, _GenmediaState, State) when State#state.playback =:= play ->
+%% seek
+handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= play ->
+	Apid = State#state.agent_pid,
+	PlaybackMs = State#state.playback_ms,
 	lager:info("While playing, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	start_event(Apid, Call, PlaybackMs, Location),
 	{ok, State};
 
-handle_play(Location, _Call, _GenmediaState, State) when State#state.playback =:= pause ->
+%% resume and seek
+handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= pause ->
 	lager:info("While paused, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-
+	Apid = State#state.agent_pid,
+	Node = State#state.cnode,
+	UUID = State#state.ringuuid,
 	% unpause
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
+	PlaybackMs = State#state.playback_ms,
+	resume_playback(Node, UUID),
+	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	start_event(Apid, Call, PlaybackMs, Location),
+	% freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
 	{ok, State#state{playback = play}};
 
+%% start and seek
 handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= stop ->
 	lager:info("While stop, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-
+	PlaybackMs = State#state.playback_ms,
 	Apid = State#state.agent_pid,
 
-	freeswitch:sendmsg(State#state.cnode, State#state.ringuuid,
-		[{"call-command", "execute"},
-			{"event-lock", "true"},
-			{"execute-app-name", "playback"},
-			{"execute-app-arg", State#state.file}]),
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-
-	agent_channel:media_push(Apid, Call, {mediaload, Call, [{<<"width">>, <<"300px">>},{<<"height">>, <<"180px">>}]}),
-
+	start_playback(State#state.cnode, State#state.ringuuid, State#state.file),
+	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	start_event(Apid, Call, PlaybackMs, Location),
 	{ok, State#state{playback = play}};
 
 handle_play(_Location, _Call, _GenmediaState, State) ->
@@ -488,27 +490,19 @@ handle_play(_Location, _Call, _GenmediaState, State) ->
 %% handle_pause
 %%--------------------------------------------------------------------
 
-handle_pause(_Call, _GenmediaState, State) when State#state.playback =:= play ->
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
+handle_pause(Call, _GenmediaState, State) when State#state.playback =:= play ->
+	Apid = State#state.agent_pid,
+	PlaybackMs = State#state.playback_ms,
+	pause_playback(State#state.cnode, State#state.ringuuid),
+	pause_event(Apid, Call, PlaybackMs),
+	% freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " pause"),
 	{ok, State#state{playback = pause}};
 
 handle_pause(_Call, _GenmediaState, State) ->
 	{ok, State}.
 
-
 %%--------------------------------------------------------------------
-%% handle_seek
-%%--------------------------------------------------------------------
-
-handle_seek(Location, _Call, _GenmediaState, State) when State#state.playback =:= play ->
-	freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-	{ok, State};
-
-handle_seek(_Location, _Call, _GenmediaState, State) ->
-	{ok, State}.
-
-%%--------------------------------------------------------------------
-%% Function: terminate(Reason, State) -> void()
+%% Function: terminatingrminate(Reason, State) -> void()
 %%--------------------------------------------------------------------
 %% @private
 terminate(Reason, _Statename, _Call, _GenMediaState, _State) ->
@@ -523,3 +517,54 @@ terminate(Reason, _Statename, _Call, _GenMediaState, _State) ->
 code_change(_OldVsn, _Call, State, _Extra) ->
 	{ok, State}.
 
+
+%% Internal functions
+
+start_playback(Node, Uuid, File) ->
+	freeswitch:sendmsg(Node, Uuid, [
+		{"call-command", "execute"},
+		{"event-lock", "true"},
+		{"execute-app-name", "playback"},
+		{"execute-app-arg", File}]).
+
+pause_playback(Node, Uuid) ->
+	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
+
+resume_playback(Node, Uuid) ->
+	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
+
+seek_playback(Node, Uuid, Location) ->
+	freeswitch:api(Node, uuid_fileman, Uuid ++ " seek:" ++ integer_to_list(Location)).
+
+start_event(Apid, Call, PlaybackMs, Location) ->
+	Update = {channel_playback_update, [
+		{<<"type">>, started},
+		{<<"location">>, Location},
+		{<<"source_module">>, ?MODULE},
+		{<<"playback_ms">>, PlaybackMs}
+	]},
+	agent_channel:media_push(Apid, Call, Update).
+
+resume_event(Apid, Call, PlaybackMs) ->
+	Update = {channel_playback_update, [
+		{<<"type">>, resumed},
+		{<<"source_module">>, ?MODULE},
+		{<<"playback_ms">>, PlaybackMs}
+	]},
+	agent_channel:media_push(Apid, Call, Update).
+
+pause_event(Apid, Call, PlaybackMs) ->
+	Update = {channel_playback_update, [
+		{<<"type">>, paused},
+		{<<"source_module">>, ?MODULE},
+		{<<"playback_ms">>, PlaybackMs}
+	]},
+	agent_channel:media_push(Apid, Call, Update).
+
+stop_event(Apid, Call, PlaybackMs) ->
+	Update = {channel_playback_update, [
+		{<<"type">>, stopped},
+		{<<"source_module">>, ?MODULE},
+		{<<"playback_ms">>, PlaybackMs}
+	]},
+	agent_channel:media_push(Apid, Call, Update).
