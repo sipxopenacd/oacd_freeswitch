@@ -401,7 +401,7 @@ handle_cast(Msg, #state{callbacks = #callbacks{handle_cast = CastFun, state = Cb
 handle_info({call, {event, [UUID | _Rest]}}, #state{cnode = Cnode, options = Options, uuid = UUID} = State) ->
 	lager:debug("call", []),
 	OptEvents = lists:sort(proplists:get_value(events, Options, [])),
-	BaseEvents = lists:sort(['CHANNEL_ANSWER', 'CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE', 'CHANNEL_HANGUP']),
+	BaseEvents = lists:sort(['CHANNEL_ANSWER', 'CHANNEL_BRIDGE', 'CHANNEL_UNBRIDGE', 'CHANNEL_HANGUP', 'PLAYBACK_STOP']),
 	Events = lists:umerge(OptEvents, BaseEvents),
 	freeswitch:session_setevent(Cnode, Events),
 	{noreply, State};
