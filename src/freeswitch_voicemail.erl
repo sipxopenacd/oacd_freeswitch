@@ -450,7 +450,8 @@ handle_play(_Call, _GenmediaState, State) ->
 	{ok, State}.
 
 %% seek
-handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= play ->
+handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= play ->
+	Location = ej:get({"location"}, Opts),
 	Apid = State#state.agent_pid,
 	PlaybackMs = State#state.playback_ms,
 	lager:info("While playing, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
@@ -459,7 +460,8 @@ handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:=
 	{ok, State};
 
 %% resume and seek
-handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= pause ->
+handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pause ->
+	Location = ej:get({"location"}, Opts),
 	lager:info("While paused, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
 	Apid = State#state.agent_pid,
 	Node = State#state.cnode,
@@ -473,7 +475,8 @@ handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:=
 	{ok, State#state{playback = play}};
 
 %% start and seek
-handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:= stop ->
+handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= stop ->
+	Location = ej:get({"location"}, Opts),
 	lager:info("While stop, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
 	PlaybackMs = State#state.playback_ms,
 	Apid = State#state.agent_pid,
@@ -483,7 +486,7 @@ handle_play(Location, Call, _GenmediaState, State) when State#state.playback =:=
 	start_event(Apid, Call, PlaybackMs, Location),
 	{ok, State#state{playback = play}};
 
-handle_play(_Location, _Call, _GenmediaState, State) ->
+handle_play(_Opts, _Call, _GenmediaState, State) ->
 	{ok, State}.
 
 %%--------------------------------------------------------------------
