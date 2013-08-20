@@ -481,8 +481,7 @@ handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= sto
 	PlaybackMs = State#state.playback_ms,
 	Apid = State#state.agent_pid,
 
-	start_playback(State#state.cnode, State#state.ringuuid, State#state.file),
-	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	start_playback(State#state.cnode, State#state.ringuuid, State#state.file, Location),
 	start_event(Apid, Call, PlaybackMs, Location),
 	{ok, State#state{playback = play}};
 
@@ -529,6 +528,15 @@ start_playback(Node, Uuid, File) ->
 		{"event-lock", "true"},
 		{"execute-app-name", "playback"},
 		{"execute-app-arg", File}]).
+
+start_playback(Node, Uuid, File, Location) ->
+	LocationSample = Location * 16, % TODO derive from variable_read_rate
+	LocationSuffix = "@@" ++ integer_to_list(LocationSample),
+	freeswitch:sendmsg(Node, Uuid, [
+		{"call-command", "execute"},
+		{"event-lock", "true"},
+		{"execute-app-name", "playback"},
+		{"execute-app-arg", File ++ LocationSuffix}]).
 
 pause_playback(Node, Uuid) ->
 	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
