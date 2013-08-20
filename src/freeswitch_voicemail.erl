@@ -455,7 +455,7 @@ handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pla
 	Apid = State#state.agent_pid,
 	PlaybackMs = State#state.playback_ms,
 	lager:info("While playing, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	seek_playback(State#state.cnode, State#state.ringuuid, State#state.file, Location),
 	start_event(Apid, Call, PlaybackMs, Location),
 	{ok, State};
 
@@ -468,8 +468,8 @@ handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pau
 	UUID = State#state.ringuuid,
 	% unpause
 	PlaybackMs = State#state.playback_ms,
-	resume_playback(Node, UUID),
-	seek_playback(State#state.cnode, State#state.ringuuid, Location),
+	% resume_playback(Node, UUID),
+	seek_playback(Node, UUID, State#state.file, Location),
 	start_event(Apid, Call, PlaybackMs, Location),
 	% freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
 	{ok, State#state{playback = play}};
@@ -544,8 +544,9 @@ pause_playback(Node, Uuid) ->
 resume_playback(Node, Uuid) ->
 	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
 
-seek_playback(Node, Uuid, Location) ->
-	freeswitch:api(Node, uuid_fileman, Uuid ++ " seek:" ++ integer_to_list(Location)).
+seek_playback(Node, Uuid, File, Location) ->
+	freeswitch:api(Node, break, Uuid ++ " all"),
+	start_playback(Node, Uuid, File, Location).
 
 start_event(Apid, Call, PlaybackMs, Location) ->
 	Update = {channel_playback_update, [
