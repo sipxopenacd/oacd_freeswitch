@@ -94,7 +94,8 @@
 	time = util:now() :: integer(),
 	playback = stop :: stop | play | pause,
 	playback_ms :: non_neg_integer() | 'undefined',
-	playback_sample_count :: non_neg_integer() | 'undefined'
+	playback_sample_count :: non_neg_integer() | 'undefined',
+	expect_stop = false :: boolean()
 }).
 
 -type(state() :: #state{}).
@@ -398,8 +399,13 @@ handle_info({event, playback_stop, Call}, _Statename, _, _GenMediaState, State) 
 	Apid = State#state.agent_pid,
 	PlaybackMs = State#state.playback_ms,
 
-	stop_event(Apid, Call, PlaybackMs),
-	{noreply, State#state{playback = stop}};
+	case State#state.expect_stop of
+		false ->
+			stop_event(Apid, Call, PlaybackMs);
+		_ ->
+			ignore
+	end,
+	{noreply, State#state{playback = stop, expect_stop = false}};
 
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
 	lager:info("unhandled info ~p", [Info]),
@@ -457,7 +463,7 @@ handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pla
 	lager:info("While playing, calling uuid_fileman " ++ State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
 	seek_playback(State#state.cnode, State#state.ringuuid, State#state.file, Location),
 	start_event(Apid, Call, PlaybackMs, Location),
-	{ok, State};
+	{ok, State#state{expect_stop = true}};
 
 %% resume and seek
 handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pause ->
@@ -472,7 +478,7 @@ handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= pau
 	seek_playback(Node, UUID, State#state.file, Location),
 	start_event(Apid, Call, PlaybackMs, Location),
 	% freeswitch:api(State#state.cnode, uuid_fileman, State#state.ringuuid ++ " seek:" ++ integer_to_list(Location)),
-	{ok, State#state{playback = play}};
+	{ok, State#state{playback = play, expect_stop = true}};
 
 %% start and seek
 handle_play(Opts, Call, _GenmediaState, State) when State#state.playback =:= stop ->
