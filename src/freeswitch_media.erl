@@ -1129,7 +1129,9 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid = UUID} = State) ->
 	RecordMs = proplists:get_value("variable_record_ms", Rawcall),
 	RecordSamples = proplists:get_value("variable_record_samples", Rawcall),
-	Info = [{record_ms, RecordMs}, {record_samples, RecordSamples}],
+	Queue = Callrec#call.queue,
+	CallerId = get_caller_id(Rawcall),
+	Info = [{playback_ms, RecordMs}, {playback_samples, RecordSamples}, {caller_id, CallerId}, {queue, Queue}, {dnis, Callrec#call.dnis}],
 
 	lager:debug("Channel hangup ~p", [Callrec#call.id]),
 	case State#state.voicemail of

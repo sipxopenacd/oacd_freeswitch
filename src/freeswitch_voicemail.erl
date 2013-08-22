@@ -72,7 +72,6 @@
 
 %% gen_media_playable callbacks
 -export([
-	handle_play/3,
 	handle_play/4,
 	handle_pause/3]).
 
@@ -130,9 +129,11 @@ dump_state(Mpid) when is_pid(Mpid) ->
 init([Cnode, UUID, File, Queue, Priority, Client, Info]) ->
 	process_flag(trap_exit, true),
 	Manager = whereis(freeswitch_media_manager),
-	PlaybackMs = list_to_integer(proplists:get_value(record_ms, Info)),
-	PlaybackSampleCount = list_to_integer(proplists:get_value(record_samples, Info)),
-	lager:info("Length of voicemail: ~p ms, ~p samples", [PlaybackMs, PlaybackSampleCount]),
+	PlaybackMs = list_to_integer(proplists:get_value(playback_ms, Info)),
+	PlaybackSampleCount = list_to_integer(proplists:get_value(playback_samples, Info)),
+	CallerId = proplists:get_value(caller_id, Info),
+	Dnis = proplists:get_value(dnis, Info),
+	lager:info("Length of voicemail: ~p ms, ~p samples, from queue ~p, ~p", [PlaybackMs, PlaybackSampleCount, Queue, Dnis]),
 
 	PsInfo = [{playback_ms, PlaybackMs}],
 
@@ -143,11 +144,13 @@ init([Cnode, UUID, File, Queue, Priority, Client, Info]) ->
 		{client, Client},
 		{media_path, inband},
 		{queue, Queue},
+		{caller_id, CallerId},
+		{dnis, Dnis},
 		{info, PsInfo}
 	],
 
 	%% @todo remove dependency to cpx_supervisor for archive path
-	Callrec = #call{id=UUID++"-vm", type=voice, source=self(), priority = Priority, client = Client, media_path = inband},
+	Callrec = #call{id=UUID++"-vm", dnis=Dnis, queue=Queue, type=voice, source=self(), priority = Priority, client = Client, media_path = inband},
 	case cpx_supervisor:get_archive_path(Callrec) of
 		none ->
 			lager:debug("archiving is not configured", []);
@@ -401,11 +404,13 @@ handle_info({event, playback_stop, Call}, _Statename, _, _GenMediaState, State) 
 
 	case State#state.expect_stop of
 		false ->
-			stop_event(Apid, Call, PlaybackMs);
+			lager:info("received stop"),
+			stop_event(Apid, Call, PlaybackMs),
+			{noreply, State#state{playback = stop, expect_stop = false}};
 		_ ->
-			ignore
-	end,
-	{noreply, State#state{playback = stop, expect_stop = false}};
+			lager:info("received stop, ignore"),
+			{noreply, State#state{expect_stop = false}}
+	end;
 
 handle_info(Info, _Statename, _Call, _GenMediaState, State) ->
 	lager:info("unhandled info ~p", [Info]),
@@ -433,7 +438,7 @@ handle_unhold(_GenmediaState, State) ->
 handle_play(Call, _GenmediaState, #state{playback=Playback} = State) when Playback =:= pause ->
 	Apid = State#state.agent_pid,
 	Node = State#state.cnode,
-	UUID = State#state.ringuuid, 
+	UUID = State#state.ringuuid,
 	PlaybackMs = State#state.playback_ms,
 	resume_playback(Node, UUID),
 	resume_event(Apid, Call, PlaybackMs),
@@ -507,6 +512,7 @@ handle_pause(Call, _GenmediaState, State) when State#state.playback =:= play ->
 	{ok, State#state{playback = pause}};
 
 handle_pause(_Call, _GenmediaState, State) ->
+	lager:info("skipping pause on ~p", [State#state.playback]),
 	{ok, State}.
 
 %%--------------------------------------------------------------------
