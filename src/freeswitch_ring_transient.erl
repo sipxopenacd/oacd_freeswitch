@@ -188,7 +188,6 @@ handle_event("PLAYBACK_STOP", _Data, _Fsref, #state{call = #call{source = CallPi
 	CallPid ! {event, playback_stop, Call},
 	{noreply, State};
 
-
 handle_event(Event, _, _, State) ->
 	lager:debug("Ignoring event ~p", [Event]),
 	{noreply, State}.
