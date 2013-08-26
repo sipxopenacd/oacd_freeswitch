@@ -39,7 +39,7 @@
 -include_lib("openacd/include/queue.hrl").
 -include_lib("openacd/include/call.hrl").
 -include_lib("openacd/include/agent.hrl").
-%-include_lib("openacd/include/gen_media.hrl").
+% -include_lib("openacd/include/gen_media.hrl").
 -include("cpx_freeswitch_pb.hrl").
 
 -define(TIMEOUT, 10000).
@@ -584,11 +584,11 @@ start_playback(Node, UUID, File) ->
 		{"execute-app-name", "playback"},
 		{"execute-app-arg", File}]).
 
-pause_playback(Node, Uuid) ->
-	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
+pause_playback(Node, UUID) ->
+	freeswitch:api(Node, uuid_fileman, UUID ++ " pause").
 
-resume_playback(Node, Uuid) ->
-	freeswitch:api(Node, uuid_fileman, Uuid ++ " pause").
+resume_playback(Node, UUID) ->
+	freeswitch:api(Node, uuid_fileman, UUID ++ " pause").
 
 seek_playback(Location, ReadRate, Node, UUID) ->
 	DefaultReadRate = 8,
@@ -602,3 +602,106 @@ seek_playback(Location, ReadRate, Node, UUID) ->
 % 			{"event-lock", "true"},
 % 			{"execute-app-name", "phrase"},
 % 			{"execute-app-arg", "voicemail_say_date,"++integer_to_list(Time)}]).
+
+% Eunit tests
+
+-ifdef(TEST).
+
+t_apid() ->
+	pid.
+
+t_assert_play() ->
+	?assert(meck:called(freeswitch, sendmsg,
+		['freeswitch@127.0.0.1', "ring-uuid", [
+			{"call-command", "execute"},
+			{"event-lock", "true"},
+			{"execute-app-name", "playback"},
+			{"execute-app-arg", "voicemail.wav@@0"}]])).
+
+t_assert_play(Loc) ->
+	?assert(meck:called(freeswitch, sendmsg,
+		['freeswitch@127.0.0.1', "ring-uuid", [
+			{"call-command", "execute"},
+			{"event-lock", "true"},
+			{"execute-app-name", "playback"},
+			{"execute-app-arg", "voicemail.wav@@" ++ integer_to_list(Loc)}]])).
+
+t_assert_not_played() ->
+	?assertNot(meck:called(freeswitch, sendmsg, ['_', '_', '_'])).
+
+t_assert_seek(Loc) ->
+	?assert(meck:called(freeswitch, api, ['freeswitch@127.0.0.1', uuid_fileman,
+		"ring-uuid seek:" ++ integer_to_list(Loc * 2)])).
+
+t_assert_resume() ->
+	?assert(meck:called(freeswitch, api, ['freeswitch@127.0.0.1', uuid_fileman,
+		"ring-uuid pause"])).
+
+t_assert_pause() ->
+	?assert(meck:called(freeswitch, api, ['freeswitch@127.0.0.1', uuid_fileman,
+		"ring-uuid pause"])).
+
+t_assert_not_paused() ->
+	?assertNot(meck:called(freeswitch, api,
+		['freeswitch@127.0.0.1', uuid_fileman, "ring-uuid pause"])).
+
+playback_control_test_() ->
+	Node = 'freeswitch@127.0.0.1',
+	AgentPid = t_apid(),
+	UUID = "ring-uuid",
+	Call = call,
+	File = "voicemail.wav",
+	ReadRate = 16,
+	{foreach, fun() ->
+		meck:new(freeswitch),
+		meck:expect(freeswitch, sendmsg, 3, ok),
+		meck:expect(freeswitch, api, 3, ok),
+		meck:new(agent_channel),
+		meck:expect(agent_channel, media_push, 3, ok)
+	end, fun(_) ->
+		meck:unload()
+	end, [{"play on play", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=play,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=play}},
+			handle_play([], Call, gm_state, St)),
+		t_assert_not_played()	
+	end}, {"play location on play", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=play,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=play}},
+			handle_play([{location, 1000}], Call, gm_state, St)),
+		t_assert_seek(1000)
+	end}, {"play on stop", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=stop,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=play}},
+			handle_play([], Call, gm_state, St)),
+		t_assert_play()
+	end}, {"play on pause", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=pause,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=play}},
+			handle_play([], Call, gm_state, St)),
+		t_assert_resume()
+	end}, {"pause on play", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=play,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=pause}},
+			handle_pause(Call, gm_state, St)),
+		t_assert_pause()
+	end}, {"pause on stop", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=stop,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=stop}},
+			handle_pause(Call, gm_state, St)),
+		t_assert_not_paused()
+	end}, {"pause on pause", fun() ->
+		St = #state{cnode=Node, ringuuid=UUID, file=File, playback_state=pause,
+			playback_read_rate=ReadRate},
+		?assertEqual({ok, St#state{playback_state=pause}},
+			handle_pause(Call, gm_state, St)),
+		t_assert_not_paused()
+	end}]}.
+
+-endif.
