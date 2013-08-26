@@ -181,7 +181,7 @@ end).
 	make_outbound_call/3,
 	record_outage/3,
 	fetch_domain_user/2,
-	new_voicemail/5,
+	new_voicemail/6,
 	ring_agent/3,
 	ring_agent/4,
 	ring_agent_echo/4,
@@ -277,9 +277,9 @@ make_outbound_call(Client, AgentPid, Agent) ->
 record_outage(Client, AgentPid, Agent) ->
 	gen_server:call(?MODULE, {record_outage, Client, AgentPid, Agent}).
 
--spec(new_voicemail/5 :: (UUID :: string(), File :: string(), Queue :: string(), Priority :: pos_integer(), Client :: #client{} | string()) -> 'ok').
-new_voicemail(UUID, File, Queue, Priority, Client) ->
-	gen_server:cast(?MODULE, {new_voicemail, UUID, File, Queue, Priority, Client}).
+-spec(new_voicemail/6 :: (UUID :: string(), File :: string(), Queue :: string(), Priority :: pos_integer(), Client :: #client{} | string(), Info :: list()) -> 'ok').
+new_voicemail(UUID, File, Queue, Priority, Client, Info) ->
+	gen_server:cast(?MODULE, {new_voicemail, UUID, File, Queue, Priority, Client, Info}).
 
 -spec(stop/0 :: () -> 'ok').
 stop() ->
@@ -634,8 +634,8 @@ handle_cast({channel_destroy, UUID}, #state{call_dict = Dict} = State) ->
 handle_cast({notify, Callid, Pid}, #state{call_dict = Dict} = State) ->
 	NewDict = dict:store(Callid, Pid, Dict),
 	{noreply, State#state{call_dict = NewDict}};
-handle_cast({new_voicemail, UUID, File, Queue, Priority, Client}, #state{nodename = Node} = State) ->
-	{ok, Pid} = freeswitch_voicemail:start(Node, UUID, File, Queue, Priority, Client),
+handle_cast({new_voicemail, UUID, File, Queue, Priority, Client, Info}, #state{nodename = Node} = State) ->
+	{ok, Pid} = freeswitch_voicemail:start(Node, UUID, File, Queue, Priority, Client, Info),
 	link(Pid),
 	{noreply, State};
 handle_cast(_Msg, State) ->
