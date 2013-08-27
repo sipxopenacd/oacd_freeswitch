@@ -131,6 +131,8 @@ dump_state(Mpid) when is_pid(Mpid) ->
 init([Cnode, UUID, File, Queue, Priority, Client, Info]) ->
 	process_flag(trap_exit, true),
 	Manager = whereis(freeswitch_media_manager),
+	CallerId = proplists:get_value(caller_id, Info),
+	Dnis = proplists:get_value(dnis, Info),
 	PlaybackMS = list_to_integer(
 		proplists:get_value(playback_ms, Info)),
 	PlaybackSamples = list_to_integer(
@@ -149,6 +151,8 @@ init([Cnode, UUID, File, Queue, Priority, Client, Info]) ->
 		{client, Client},
 		{media_path, inband},
 		{queue, Queue},
+		{dnis, Dnis},
+		{caller_id, CallerId},
 		{info, PsInfo}
 	],
 

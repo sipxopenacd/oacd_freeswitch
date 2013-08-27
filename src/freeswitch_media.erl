@@ -1127,13 +1127,6 @@ case_event_name("CHANNEL_PARK", UUID, Rawcall, Callrec, #state{
 	{queue, Queue, CallPs, State#state{queue = Queue, queued=true, allow_voicemail=AllowVM, vm_priority_diff = VMPriorityDiff, moh=Moh, ivroption = Ivropt, statename = inqueue}};
 
 case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid = UUID} = State) ->
-	PlaybackMS = proplists:get_value("variable_record_ms", Rawcall),
-	PlaybackSamples = proplists:get_value("variable_record_samples", Rawcall),
-	PlaybackReadRate = proplists:get_value("variable_read_rate", Rawcall),
-	Info = [{playback_ms, PlaybackMS},
-		{playback_samples, PlaybackSamples},
-		{playback_read_rate, PlaybackReadRate}],
-
 	lager:debug("Channel hangup ~p", [Callrec#call.id]),
 	case State#state.voicemail of
 		false -> % no voicemail
@@ -1141,6 +1134,16 @@ case_event_name("CHANNEL_HANGUP_COMPLETE", UUID, Rawcall, Callrec, #state{uuid =
 		FileName ->
 			case filelib:is_regular(FileName) of
 				true ->
+					PlaybackMS = proplists:get_value("variable_record_ms", Rawcall),
+					PlaybackSamples = proplists:get_value("variable_record_samples", Rawcall),
+					PlaybackReadRate = proplists:get_value("variable_read_rate", Rawcall),
+					CallerId = get_caller_id(Rawcall),
+					Dnis = Callrec#call.dnis,
+					Info = [{caller_id, CallerId},
+						{dnis, Dnis},
+						{playback_ms, PlaybackMS},
+						{playback_samples, PlaybackSamples},
+						{playback_read_rate, PlaybackReadRate}],
 					lager:notice("~s left a voicemail", [UUID]),
 					Client = Callrec#call.client,
 
