@@ -415,7 +415,7 @@ handle_wrapup(_From, _StateName, _Call, _GenMediaState, State) ->
 	{ok, State}.
 
 %% @hidden
-handle_queue_transfer(_Queue, _StateName, Call, _GenMediaState, #state{cnode = Fnode} = State) ->
+handle_queue_transfer({QName, _Qpid}, _StateName, Call, _GenMediaState, #state{cnode = Fnode} = State) ->
 	case State#state.record_path of
 		undefined ->
 			ok;
@@ -431,12 +431,9 @@ handle_queue_transfer(_Queue, _StateName, Call, _GenMediaState, #state{cnode = F
 		none ->
 			ok;
 		_MohMusak ->
-			freeswitch:sendmsg(Fnode, Call#call.id,
-				[{"call-command", "execute"},
-					{"execute-app-name", "playback"},
-					{"execute-app-arg", "local_stream://" ++ State#state.moh}])
+			freeswitch:api(Fnode, uuid_broadcast, Call#call.id ++ " local_stream://" ++ State#state.moh)
 	end,
-	{ok, State#state{statename = inqueue, queued = true, agent_pid = undefined}}.
+	{ok, State#state{statename = inqueue, queue = QName, queued = true, agent_pid = undefined}}.
 
 %%--------------------------------------------------------------------
 %% Description: Handling call messages
