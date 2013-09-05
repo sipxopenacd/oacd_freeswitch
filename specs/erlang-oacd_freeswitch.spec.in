@@ -15,12 +15,14 @@ BuildRequires:	erlang-rebar
 BuildRequires:	erlang-eunit
 BuildRequires:	erlang-lager
 BuildRequires:	erlang-ejrpc2
+BuildRequires:  erlang-ej
 BuildRequires:	erlang-openacd
 Requires:	erlang-erts%{?_isa} >= R15B
 Requires:	erlang-kernel%{?_isa}
 Requires:	erlang-stdlib%{?_isa} >= R15B
 Requires:	erlang-lager
 Requires:	erlang-ejrpc2
+Requires:	erlang-ej
 Requires:	erlang-openacd
 
 %description
@@ -57,5 +59,7 @@ make check
 
 
 %changelog
+* Thu Sep 05 2013 Lou Allen Uysison <luysison@ezuce.com>
+- Add ej package
 * Thu Feb 07 2013 Jan Vincent Liwanag - 2.0.0-1
 - Initial release
