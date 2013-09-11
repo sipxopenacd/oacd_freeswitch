@@ -633,13 +633,10 @@ handle_cast({blind_transfer, Destination}, _Statename, Call, _GenMediaState, #st
 		CidOut -> CidOut
 	end,
 	BaseDS = freeswitch_media_manager:get_default_dial_string(),
-	RingOpts = [CallerNameOpt, CallerNumberOpt, "hangup_after_bridge=false"],
+	RingOpts = [CallerNameOpt, CallerNumberOpt, "hangup_after_bridge=true"],
 	Dialstring = freeswitch_media_manager:do_dial_string(BaseDS, Destination, RingOpts),
-	lager:debug("Transfering ~s to ~s blindly.", [UUID, Dialstring]),
-	freeswitch:api(Fnode, uuid_setvar, UUID ++ " park_after_bridge true"),
 	freeswitch:bgapi(Fnode, uuid_transfer, UUID ++ " 'm:^:bridge:" ++ Dialstring ++ "' inline"),
 
-	%% @todo should go to wrap-up if blind transferred from oncall
 	{noreply, State#state{statename = 'blind_transfered'}};
 
 handle_cast({play_dtmf, []}, _Statename, _Call, _GenMediaState, State) ->
