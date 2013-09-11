@@ -178,7 +178,7 @@ end).
 	stop/0,
 	get_handler/1,
 	notify/2,
-	make_outbound_call/3,
+	make_outbound_call/2,
 	record_outage/3,
 	fetch_domain_user/2,
 	new_voicemail/6,
@@ -272,9 +272,9 @@ get_handler(UUID) ->
 notify(UUID, Pid) ->
 	gen_server:cast(?MODULE, {notify, UUID, Pid}).
 
--spec(make_outbound_call/3 :: (Client :: any(), AgentPid :: pid(), Agent :: string()) -> {'ok', pid()} | {'error', any()}).
-make_outbound_call(Client, AgentPid, Agent) ->
-	gen_server:call(?MODULE, {make_outbound_call, Client, AgentPid, Agent}).
+-spec(make_outbound_call/2 :: (Agent :: string(), Client :: string()) -> {'ok', pid()} | {'error', any()}).
+make_outbound_call({AgentLogin, Apid}, Client) ->
+	gen_server:cast(?MODULE, {make_outbound_call, {AgentLogin, Apid}, Client}).
 
 -spec(record_outage/3 :: (Client :: any(), AgentPid :: pid(), Agent :: string()) -> 'ok' | {'error', any()}).
 record_outage(Client, AgentPid, Agent) ->
@@ -434,10 +434,6 @@ handle_call({get_ring_data, Agent, Options}, _From, #state{fetch_domain_user = U
 		_ -> {reply, {Node, Base, Destination}, State}
 	end;
 
-handle_call({make_outbound_call, Client, AgentPid, Agent}, _From, #state{nodename = Node, dialstring = DS, freeswitch_up = FS} = State) when FS == true ->
-	{ok, Pid} = freeswitch_outbound:start(Node, Agent, AgentPid, Client, DS, 30),
-	link(Pid),
-	{reply, {ok, Pid}, State};
 handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> % freeswitch is down
 	{reply, {error, noconnection}, State};
 %handle_call({record_outage, Client, AgentPid, Agent}, _From, #state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
@@ -656,6 +652,15 @@ handle_cast({channel_destroy, UUID}, #state{call_dict = Dict} = State) ->
 		error ->
 			{noreply, State}
 	end;
+handle_cast({make_outbound_call, {AgentLogin, Apid}, Client}, #state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
+	ARec = agent:dump_state(Apid),
+	ReleaseState = ARec#agent.release_data,
+	Conn = ARec#agent.connection,
+	case ReleaseState of
+		undefined -> ok;
+		_ -> freeswitch_outbound:start_link(Node, AgentLogin, Client, Conn)
+	end,
+	{noreply, State};
 handle_cast({notify, Callid, Pid}, #state{call_dict = Dict} = State) ->
 	NewDict = dict:store(Callid, Pid, Dict),
 	{noreply, State#state{call_dict = NewDict}};
