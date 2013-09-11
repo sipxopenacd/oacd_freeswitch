@@ -78,17 +78,18 @@ init([Fnode, Agent, Dest, Conn]) ->
     CallerId = "OpenACD",
     case freeswitch:api(Fnode, create_uuid) of
         {ok, UUID} ->
-            freeswitch:api(Fnode, originate,
+            freeswitch:bgapi(Fnode, originate,
             " {origination_uuid=" ++ UUID ++
+            ",ignore_early_media=true" ++
             ",origination_caller_id_number=" ++ Agent ++
             ",origination_caller_id_name=" ++ CallerId ++
             ",hangup_after_bridge=true}sofia/openucrpm.ezuce.ph/" ++ Agent ++
             "@openucrpm.ezuce.ph &park()"),
-            lager:info("testing output", []),
-            Reply = freeswitch:handlecall(Fnode, UUID),
-            lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]),
+            lager:info("testing output UUID ~p", [UUID]),
             ouc_update(Conn, ?EVENT_KEY, UUID, [{state, agent_ringing}]),
-            {ok, agent_ringing, #state{uuid=UUID,
+            % Reply = freeswitch:handlecall(Fnode, UUID),
+            % lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]),
+            {ok, precall, #state{uuid=UUID,
                     fnode=Fnode,
                     agent=Agent,
                     destination=Dest,
@@ -117,28 +118,22 @@ init([Fnode, Agent, Dest, Conn]) ->
 %% called if a timeout occurs.
 %%--------------------------------------------------------------------
 agent_ringing(agent_pickup, #state{
-        agent=Agent, fnode=Fnode, uuid=UUID,
+        fnode=Fnode, uuid=UUID,
         destination=Dest, conn=Conn} = State) ->
     lager:info("In agent_pickup state", []),
     case freeswitch:api(Fnode, create_uuid) of
         {ok, BLeg} ->
-            freeswitch:api(Fnode, expand,
+            freeswitch:bgapi(Fnode, expand,
             " originate {origination_uuid=" ++ BLeg ++
             ",origination_caller_id_number=" ++ Dest ++
             ",origination_caller_id_name='Outbound Call'" ++
             ",hangup_after_bridge=true}sofia/${domain}/" ++ Dest ++
             "@${domain} &park()"),
-            case freeswitch:handlecall(Fnode, BLeg) of
-                {error, Error} ->
-                    ouc_update(Conn, ?EVENT_KEY, UUID, [{state, stopped}]),
-                    {stop, Error, State};
-                Reply -> lager:info("handlecall reply for UUID ~p: ~p", [BLeg, Reply]),
-                    ouc_update(Conn, ?EVENT_KEY, UUID, [{state, outbound_ringing}]),
-                    {next_state, outbound_ringing, State#state{bleg = BLeg}}
-            end;
+            ouc_update(Conn, ?EVENT_KEY, UUID, [{state, outbound_ringing}]),
+            {next_state, agent_ringing, State#state{bleg = BLeg}};
         _ ->
             ouc_update(Conn, ?EVENT_KEY, UUID, [{state, agent_pickup}]),
-            {next_state, agent_pickup, State}
+            {stop, uuid_not_created}
     end.
 
 outbound_ringing(outbound_pickup, #state{
@@ -251,9 +246,32 @@ handle_info({error, Error}, _StateName, State) ->
     lager:info("Error received: ~p", [Error]),
     {stop, Error, State};
 
+handle_info({bgerror, _MsgID, Error}, _StateName, State) ->
+    lager:info("Error received: ~p", [Error]),
+    {stop, Error, State};
+
 handle_info(call_hangup, _StateName, State) ->
   lager:info("Received call_hangup", []),
   {stop, call_hangup, State};
+
+% handle_info({bgok, UUID, Msg}, _StateName, State) ->
+%     lager:info("UUID: ~p", [UUID]),
+%     {next_state, outbound_ringing, State};
+
+handle_info({bgok, _MsgID, Reply}, StateName,
+    #state{fnode=Fnode, uuid=UUID, bleg=BLeg} = State) ->
+    ReplyList = string:tokens(Reply, " \n"),
+    case ReplyList of
+        ["+OK"|[UUID]] ->
+            handle_call(Fnode, UUID),
+            {next_state, agent_ringing, State};
+        ["+OK"|[BLeg]] ->
+            handle_call(Fnode, BLeg),
+            {next_state, outbound_ringing, State};
+        Reply1 ->
+            lager:info("Reply : ~p", [Reply1]),
+            {next_state, StateName, State}
+    end;
 
 handle_info(Info, StateName, State) ->
   lager:info("Received Info ~p", [Info]),
@@ -268,7 +286,7 @@ handle_info(Info, StateName, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, #state{
         uuid=UUID, conn=Conn} = _State) ->
-  ouc_update(Conn, ?EVENT_KEY, UUID, [{state, stopped}]),
+  ouc_update(Conn, ?EVENT_KEY, UUID, [{state, ended}]),
   ok.
 
 %%--------------------------------------------------------------------
@@ -300,3 +318,7 @@ case_event_name(_Other, _UUID, StateName, State) ->
 
 ouc_update(Conn, Event, CallId, Data) ->
   Conn ! {Event, {l2b(CallId), Data}}.
+
+handle_call(Fnode, UUID) ->
+    Reply = freeswitch:handlecall(Fnode, UUID),
+    lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]).
