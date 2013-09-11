@@ -194,7 +194,8 @@ end).
 	get_agent_dial_string/2,
 	monitor_agent/2,
 	monitor_client/2,
-	get_node/0
+	get_node/0,
+	get_default_domain/0
 ]).
 
 %% gen_server callbacks
@@ -203,6 +204,7 @@ end).
 
 -record(state, {
 	nodename :: atom(),
+	domain :: string(),
 	freeswitch_up = false :: boolean(),
 	call_dict = dict:new() :: dict(),
 	dialstring = "" :: string(),
@@ -358,6 +360,10 @@ monitor_client(Client, Watcher) ->
 get_node() ->
 	gen_server:call(?MODULE, get_node).
 
+-spec(get_default_domain/0 :: () -> atom()).
+get_default_domain() ->
+	gen_server:call(?MODULE, get_default_domain).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -367,20 +373,23 @@ init([Nodename, Options]) ->
 	process_flag(trap_exit, true),
 	DialString = proplists:get_value(dialstring, Options, ""),
 	monitor_node(Nodename, true),
-	{Listenpid, DomainPid, FetchUserOpts} = case net_adm:ping(Nodename) of
+	{Domain, Listenpid, DomainPid, FetchUserOpts} = case net_adm:ping(Nodename) of
 		pong ->
 			Lpid = start_listener(Nodename),
 			freeswitch:event(Nodename, ['CHANNEL_DESTROY']),
+			D = fs_get_default_domain(Nodename),
 			StrippedOpts = [ X || {Key, _} = X <- Options, Key /= domain],
 			%{ok, Pid} = freeswitch:start_fetch_handler(Nodename, directory, ?MODULE, fetch_domain_user, StrippedOpts),
 			%link(Pid),
-			{Lpid, undefined, StrippedOpts};
+			{D, Lpid, undefined, StrippedOpts};
 		_ ->
 			StrippedOpts = [ X || {Key, _} = X <- Options, Key /= domain],
-			{undefined, undefined, StrippedOpts}
+			{undefined, undefined, undefined, StrippedOpts}
 	end,
 	lager:info("Started for node ~p", [Nodename]),
-	{ok, #state{nodename=Nodename, dialstring = DialString, eventserver = Listenpid, xmlserver = DomainPid, freeswitch_up = true, fetch_domain_user = FetchUserOpts}}.
+	{ok, #state{nodename=Nodename, domain = Domain, dialstring = DialString,
+		eventserver = Listenpid, xmlserver = DomainPid, freeswitch_up = true,
+		fetch_domain_user = FetchUserOpts}}.
 
 %%--------------------------------------------------------------------
 %% Description: Handling call messages
@@ -614,6 +623,9 @@ handle_call(get_default_dial_string, _From, State) ->
 %			freeswitch_monitor:monitor_client(Watched, DialString, State#state.nodename)
 %	end,
 %	{reply, Res, State};
+handle_call(get_default_domain, _From, State) ->
+	Reply = State#state.domain,
+	{reply, Reply, State};
 handle_call(Request, _From, State) ->
 	lager:info("Unexpected call:  ~p", [Request]),
 	Reply = ok,
@@ -742,11 +754,13 @@ handle_info(freeswitch_ping, #state{nodename = Nodename, fetch_domain_user = Fop
 			{ok, Pid} = freeswitch:start_fetch_handler(Nodename, directory, ?MODULE, fetch_domain_user, Fopts),
 			link(Pid),
 			freeswitch:event(Nodename, ['CHANNEL_DESTROY']),
+			Domain = fs_get_default_domain(Nodename),
 			case proplists:get_value(not_ring_manager, Fopts) of
 				true -> ok;
 				_ -> application:set_env('OpenACD', ring_manager, ?MODULE)
 			end,
-			{noreply, State#state{eventserver = Lpid, xmlserver = Pid, freeswitch_up = true}};
+			{noreply, State#state{domain = Domain, eventserver = Lpid,
+				xmlserver = Pid, freeswitch_up = true}};
 		pang ->
 			timer:send_after(1000, freeswitch_ping),
 			{noreply, State}
@@ -810,6 +824,10 @@ listener(Node) ->
 			 lager:info("Uncertain reply received by the fmm listener:  ~p", [Otherwise]),
 			 listener(Node)
 	end.
+
+fs_get_default_domain(Node) ->
+	{ok, Domain} = freeswitch:api(Node, expand, "echo ${domain}"),
+	Domain.
 
 -spec(fetch_domain_user/2 :: (Node :: atom(), State :: #state{}) -> 'ok').
 fetch_domain_user(Node, State) ->
