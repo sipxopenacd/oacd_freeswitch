@@ -489,7 +489,7 @@ handle_cast(toggle_hold, _Statename, Call, _GenMediaState, #state{statename = on
 	freeswitch:api(Fnode, uuid_setvar_multi, Callid ++ " hangup_after_bridge=true;park_after_bridge=false"),
 	{noreply, State#state{statename = oncall}};
 
-handle_cast({contact_3rd_party, _Args} = Cast, Statename, Call, GenMediaState, #state{statename = oncall_hold, cnode = Fnode} = State) ->
+handle_cast({contact_3rd_party, _Args} = Cast, Statename, Call, GenMediaState, #state{statename = oncall, cnode = Fnode} = State) ->
 	% first step is to move to hold_conference state, which means
 	% creating the conference.
 	{ok, ConfId} = freeswitch:api(Fnode, create_uuid),
