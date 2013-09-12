@@ -85,8 +85,10 @@ init([Fnode, Agent, Dest, Conn]) ->
             ",origination_caller_id_name=" ++ CallerId ++
             ",hangup_after_bridge=true}sofia/openucrpm.ezuce.ph/" ++ Agent ++
             "@openucrpm.ezuce.ph &park()"),
+            Time = util:now_ms(),
             lager:info("testing output UUID ~p", [UUID]),
-            ouc_update(Conn, ?EVENT_KEY, UUID, [{state, agent_ringing}]),
+            ouc_update(Conn, ?EVENT_KEY, UUID,
+                [{state, initiated}, {timestamp, Time}]),
             % Reply = freeswitch:handlecall(Fnode, UUID),
             % lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]),
             {ok, precall, #state{uuid=UUID,
@@ -129,7 +131,9 @@ agent_ringing(agent_pickup, #state{
             ",origination_caller_id_name='Outbound Call'" ++
             ",hangup_after_bridge=true}sofia/${domain}/" ++ Dest ++
             "@${domain} &park()"),
-            ouc_update(Conn, ?EVENT_KEY, UUID, [{state, outbound_ringing}]),
+            Time = util:now_ms(),
+            ouc_update(Conn, ?EVENT_KEY, UUID,
+                [{state, outbound_ringing}, {timestamp, Time}]),
             {next_state, agent_ringing, State#state{bleg = BLeg}};
         _ ->
             ouc_update(Conn, ?EVENT_KEY, UUID, [{state, agent_pickup}]),
@@ -143,7 +147,9 @@ outbound_ringing(outbound_pickup, #state{
     " " ++ BLeg ++
     " " ++ UUID),
     lager:info("Bridge result : ~p", [BridgeOutcome]),
-    ouc_update(Conn, ?EVENT_KEY, UUID, [{state, oncall}]),
+    Time = util:now_ms(),
+    ouc_update(Conn, ?EVENT_KEY, UUID,
+        [{state, oncall}, {timestamp, Time}]),
     {next_state, oncall, State}.
 
 state_name(_Event, State) ->
@@ -286,8 +292,10 @@ handle_info(Info, StateName, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _StateName, #state{
         uuid=UUID, conn=Conn} = _State) ->
-  ouc_update(Conn, ?EVENT_KEY, UUID, [{state, ended}]),
-  ok.
+    Time = util:now_ms(),
+    ouc_update(Conn, ?EVENT_KEY, UUID,
+        [{state, ended}, {timestamp, Time}]),
+    ok.
 
 %%--------------------------------------------------------------------
 %% Function:
