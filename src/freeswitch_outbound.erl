@@ -19,11 +19,12 @@
 %% API
 -export([start_link/4,
          agent_pickup/1,
+         call_destination/2,
          outbound_pickup/1]).
 
 %% gen_fsm callbacks
 -export([init/1, state_name/2, state_name/3,
-         agent_ringing/2, outbound_ringing/2,
+         agent_ringing/2, awaiting_destination/2, outbound_ringing/2,
          handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
@@ -57,6 +58,10 @@ start_link(Cnode, Agent, Dest, Conn) ->
 agent_pickup(Pid) ->
     lager:info("In agent_pickup API", []),
     gen_fsm:send_event(Pid, agent_pickup).
+
+call_destination(Pid, Client) ->
+    lager:info("In call_destination API with values ~p ~p", [Pid, Client]),
+    gen_fsm:send_event(Pid, {call_destination, Client}).
 
 outbound_pickup(Pid) ->
     lager:info("In outbound_pickup API" , []),
@@ -120,23 +125,31 @@ init([Fnode, Agent, Dest, Conn]) ->
 %% called if a timeout occurs.
 %%--------------------------------------------------------------------
 agent_ringing(agent_pickup, #state{
-        fnode=Fnode, uuid=UUID,
-        destination=Dest, conn=Conn} = State) ->
-    lager:info("In agent_pickup state", []),
+        fnode=Fnode, uuid=UUID, conn=Conn} = State) ->
+    Time = util:now_ms(),
+    ouc_update(Conn, ?EVENT_KEY, UUID,
+        [{state, awaiting_destination}, {timestamp, Time}]),
+    freeswitch:bgapi(Fnode, uuid_broadcast, UUID ++ " local_stream://moh"),
+    {next_state, awaiting_destination, State}.
+
+
+awaiting_destination({call_destination, Client}, #state{
+        fnode=Fnode, uuid=UUID, conn=Conn} = State) ->
     case freeswitch:api(Fnode, create_uuid) of
         {ok, BLeg} ->
             freeswitch:bgapi(Fnode, expand,
             " originate {origination_uuid=" ++ BLeg ++
-            ",origination_caller_id_number=" ++ Dest ++
+            ",origination_caller_id_number=" ++ Client ++
             ",origination_caller_id_name='Outbound Call'" ++
-            ",hangup_after_bridge=true}sofia/${domain}/" ++ Dest ++
+            ",hangup_after_bridge=true}sofia/${domain}/" ++ Client ++
             "@${domain} &park()"),
             Time = util:now_ms(),
             ouc_update(Conn, ?EVENT_KEY, UUID,
-                [{state, outbound_ringing}, {timestamp, Time}]),
-            {next_state, agent_ringing, State#state{bleg = BLeg}};
+                [{state, outgoing_ringing}, {timestamp, Time}]),
+            lager:info("In call_destination state with bleg ~p", [BLeg]),
+            {next_state, awaiting_destination,
+                State#state{destination = Client, bleg = BLeg}};
         _ ->
-            ouc_update(Conn, ?EVENT_KEY, UUID, [{state, agent_pickup}]),
             {stop, uuid_not_created}
     end.
 
@@ -280,7 +293,7 @@ handle_info({bgok, _MsgID, Reply}, StateName,
     end;
 
 handle_info(Info, StateName, State) ->
-  lager:info("Received Info ~p", [Info]),
+  lager:info("Received Info ~p\nStateName ~p\nState ~p", [Info,StateName,State]),
   {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------

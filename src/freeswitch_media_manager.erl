@@ -178,7 +178,8 @@ end).
 	stop/0,
 	get_handler/1,
 	notify/2,
-	make_outbound_call/2,
+	initiate_outbound_call/2,
+	make_outbound_call/3,
 	record_outage/3,
 	fetch_domain_user/2,
 	new_voicemail/6,
@@ -272,9 +273,12 @@ get_handler(UUID) ->
 notify(UUID, Pid) ->
 	gen_server:cast(?MODULE, {notify, UUID, Pid}).
 
--spec(make_outbound_call/2 :: (Agent :: string(), Client :: string()) -> {'ok', pid()} | {'error', any()}).
-make_outbound_call({AgentLogin, Apid}, Client) ->
-	gen_server:cast(?MODULE, {make_outbound_call, {AgentLogin, Apid}, Client}).
+initiate_outbound_call({AgentLogin, Apid}, Client) ->
+	gen_server:call(?MODULE, {initiate_outbound_call, {AgentLogin, Apid}, Client}).
+
+-spec(make_outbound_call/3 :: (Apid :: pid(), Pid :: pid(), Client :: string()) -> {'ok', pid()} | {'error', any()}).
+make_outbound_call(Apid, Pid, Client) ->
+	gen_server:cast(?MODULE, {make_outbound_call, Apid, Pid, Client}).
 
 -spec(record_outage/3 :: (Client :: any(), AgentPid :: pid(), Agent :: string()) -> 'ok' | {'error', any()}).
 record_outage(Client, AgentPid, Agent) ->
@@ -436,6 +440,16 @@ handle_call({get_ring_data, Agent, Options}, _From, #state{fetch_domain_user = U
 
 handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> % freeswitch is down
 	{reply, {error, noconnection}, State};
+handle_call({initiate_outbound_call, {AgentLogin, Apid}, Client}, _From,
+	#state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
+	ARec = agent:dump_state(Apid),
+	ReleaseState = ARec#agent.release_data,
+	Conn = ARec#agent.connection,
+	Reply = case ReleaseState of
+		undefined -> {error, "not_released"};
+		_ -> freeswitch_outbound:start_link(Node, AgentLogin, Client, Conn)
+	end,
+	{reply, Reply, State};
 %handle_call({record_outage, Client, AgentPid, Agent}, _From, #state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
 %	Recording = "/tmp/"++Client++"/problem.wav",
 %	case filelib:ensure_dir(Recording) of
@@ -652,13 +666,12 @@ handle_cast({channel_destroy, UUID}, #state{call_dict = Dict} = State) ->
 		error ->
 			{noreply, State}
 	end;
-handle_cast({make_outbound_call, {AgentLogin, Apid}, Client}, #state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
+handle_cast({make_outbound_call, Apid, Pid, Client}, #state{freeswitch_up = FS} = State) when FS == true ->
 	ARec = agent:dump_state(Apid),
 	ReleaseState = ARec#agent.release_data,
-	Conn = ARec#agent.connection,
 	case ReleaseState of
 		undefined -> ok;
-		_ -> freeswitch_outbound:start_link(Node, AgentLogin, Client, Conn)
+		_ -> freeswitch_outbound:call_destination(Pid, Client)
 	end,
 	{noreply, State};
 handle_cast({notify, Callid, Pid}, #state{call_dict = Dict} = State) ->
