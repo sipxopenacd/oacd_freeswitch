@@ -623,7 +623,7 @@ handle_cast({audio_level, Target, Level}, _Statename, Call, _GenMediaState, #sta
 
 handle_cast({blind_transfer, Destination0}, _Statename, Call, _GenMediaState, #state{statename = Statename} = State)
 		when Statename == inqueue; Statename == oncall ->
-	Destination = fix_destination(Destination0),
+	Destination = freeswitch_media_manager:fix_sip_addr(Destination0),
 	#state{cnode = Fnode} = State,
 	#call{client = Client, id = UUID} = Call,
 	#client{options= ClientOpts} = Client,
@@ -1303,17 +1303,6 @@ get_rawcall_int(Key, Rawcall, Default) ->
 					Default
 			end
 	end.
-
-fix_destination("sip:" ++ Addr = A) ->
-	case lists:member($@, Addr) of
-		true ->
-			A;
-		_ ->
-			lists:append([A, "@", freeswitch_media_manager:get_default_domain()])
-	end;
-fix_destination(A) ->
-	fix_destination("sip:" ++ A).
-
 
 -ifdef(TEST).
 

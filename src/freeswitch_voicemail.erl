@@ -58,6 +58,7 @@
 	handle_ring/4,
 	handle_ring_stop/4,
 	handle_answer/5,
+	handle_transfer_outband/5,
 	handle_agent_transfer/4,
 	handle_queue_transfer/5,
 	handle_wrapup/5,
@@ -217,7 +218,8 @@ handle_answer(Apid, inqueue_ringing, Call, GenMediaState, State) ->
 		[Call#call.id, File]),
 	start_playback(Node, RingUUID, File),
 	send_playback_update({started, 0}, Apid, Call, PlaybackMs),
-	{ok, State#state{agent_pid = Apid, answered = true, ringuuid = RingUUID,
+	{ok, State#state{agent_pid = Apid, answered = true,
+		ringchannel = RingPid, ringuuid = RingUUID,
 		playback_state = play}}.
 
 %% Currently not used
@@ -316,6 +318,34 @@ handle_queue_transfer(_Queue, _Statename, _Call, _GenMediaState, #state{ringchan
 
 handle_queue_transfer(_Queue, _Statename, _Call, _GenMediaState, State) ->
 	{ok, State#state{answered = false}}.
+
+-spec(handle_transfer_outband/5 :: (Addr :: any(), StateName :: atom(), Call :: #call{}, Internal :: any(), State :: #state{}) -> {'ok', #state{}}).
+handle_transfer_outband(Addr, inqueue_ringing, Call, Internal, State) ->
+	{ok, Midstate} = handle_ring_stop(inqueue_ringing, Call, undefined, State),
+	handle_transfer_outband(Addr, undefined, Call, Internal, Midstate);
+handle_transfer_outband(Addr0, _Statename, Call, _GenMediaState, St) ->
+	Cnode = St#state.cnode,
+	File = St#state.file,
+	RingChannel = St#state.ringchannel,
+
+	{CallerName, CallerNumber} = Call#call.callerid,
+	Dnis = Call#call.dnis,
+
+	Addr = freeswitch_media_manager:fix_sip_addr(Addr0),
+
+	BaseDs = freeswitch_media_manager:get_default_dial_string(),
+	RingOpts = ["origination_caller_id_name='"++CallerName++"'",
+		"origination_caller_id_number="++CallerNumber,
+		"sip_h_X-DNIS='"++Dnis++"'",
+		"hangup_after_bridge=true"],
+
+	Dialstring = freeswitch_media_manager:do_dial_string(BaseDs, Addr, RingOpts),
+	freeswitch_ring:hangup(RingChannel),
+	%% TODO escape
+	freeswitch:bgapi(Cnode, originate,
+		Dialstring ++ " 'playback:" ++ File ++ "' inline"),
+
+	{ok, St}.
 
 %%--------------------------------------------------------------------
 %% Description: Handling call messages

@@ -195,7 +195,8 @@ end).
 	monitor_agent/2,
 	monitor_client/2,
 	get_node/0,
-	get_default_domain/0
+	get_default_domain/0,
+	fix_sip_addr/1
 ]).
 
 %% gen_server callbacks
@@ -363,6 +364,18 @@ get_node() ->
 -spec(get_default_domain/0 :: () -> atom()).
 get_default_domain() ->
 	gen_server:call(?MODULE, get_default_domain).
+
+-spec(fix_sip_addr/1 :: (string()) -> string()).
+fix_sip_addr("sip:" ++ Addr = A) ->
+	case lists:member($@, Addr) of
+		true ->
+			A;
+		_ ->
+			lists:append([A, "@", get_default_domain()])
+	end;
+fix_sip_addr(A) ->
+	fix_sip_addr("sip:" ++ A).
+
 
 %%====================================================================
 %% gen_server callbacks
