@@ -90,6 +90,9 @@ handle_call(_Msg, _From, _FsRef, State) ->
 %% =====
 %% handle_cast
 %% =====
+handle_cast(hangup, {FsNode, UUID}, State) ->
+	freeswitch:bgapi(FsNode, uuid_kill, UUID),
+	{stop, normal, State};
 handle_cast({agent_state, oncall, #call{type = IsVoice}}, _FsRef, State) when IsVoice =:= voice; IsVoice =:= voicemail ->
 	% bridging will happen, and all will be happy.
 	{noreply, State};
