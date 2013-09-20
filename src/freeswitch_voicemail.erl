@@ -60,6 +60,7 @@
 	handle_answer/5,
 	handle_agent_transfer/4,
 	handle_queue_transfer/5,
+	handle_voicemail_outbound/6,
 	handle_wrapup/5,
 	handle_call/6,
 	handle_cast/5,
@@ -316,6 +317,21 @@ handle_queue_transfer(_Queue, _Statename, _Call, _GenMediaState, #state{ringchan
 
 handle_queue_transfer(_Queue, _Statename, _Call, _GenMediaState, State) ->
 	{ok, State#state{answered = false}}.
+
+handle_voicemail_outbound(Dest, ARec, _Statename, _Call, _GenmediaState, State) ->
+	Node = State#state.cnode,
+	UUID = State#state.ringuuid,
+	Agent = ARec#agent.login,
+	Conn = ARec#agent.connection,
+	Props = [{agent, Agent}, {conn, Conn}, {destination, Dest}, {uuid, UUID}, {type, voicemail}],
+	lager:info("starting voicemail outbound with UUID ~p", [UUID]),
+	Reply = freeswitch_outbound:start_link(Node, Props),
+	case Reply of
+		{ok, _OutboundPid} ->
+			{ok, State};
+		_ ->
+			{error, State}
+	end.
 
 %%--------------------------------------------------------------------
 %% Description: Handling call messages

@@ -72,6 +72,7 @@
 	handle_ring_stop/4,
 	handle_answer/5,
 	handle_voicemail/4,
+	handle_voicemail_outbound/6,
 	handle_transfer_outband/5,
 	handle_spy/5,
 	handle_announce/5,
@@ -434,6 +435,9 @@ handle_queue_transfer({QName, _Qpid}, _StateName, Call, _GenMediaState, #state{c
 			freeswitch:api(Fnode, uuid_broadcast, Call#call.id ++ " local_stream://" ++ State#state.moh)
 	end,
 	{ok, State#state{statename = inqueue, queue = QName, queued = true, agent_pid = undefined}}.
+
+handle_voicemail_outbound(_Dest, _AgentRec, _Statename, _Call, _GenmediaState, State) ->
+	{ok, State}.
 
 %%--------------------------------------------------------------------
 %% Description: Handling call messages
