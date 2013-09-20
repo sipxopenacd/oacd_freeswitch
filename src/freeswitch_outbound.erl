@@ -17,7 +17,7 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/4,
+-export([start_link/2,
          agent_pickup/1,
          call_destination/2,
          outbound_pickup/1]).
@@ -40,7 +40,9 @@
         fnode,
         conn,
         agent,
-        destination
+        destination,
+        client,
+        type
     }).
 
 %%====================================================================
@@ -52,19 +54,19 @@
 %% initialize. To ensure a synchronized start-up procedure, this function
 %% does not return until Module:init/1 has returned.
 %%--------------------------------------------------------------------
-start_link(Cnode, Agent, Dest, Conn) ->
-  gen_fsm:start_link(?MODULE, [Cnode, Agent, Dest, Conn], []).
+start_link(Cnode, Props) ->
+  gen_fsm:start_link(?MODULE, [Cnode, Props], []).
 
 agent_pickup(Pid) ->
-    lager:info("In agent_pickup API", []),
+    lager:debug("In agent_pickup API", []),
     gen_fsm:send_event(Pid, agent_pickup).
 
 call_destination(Pid, Client) ->
-    lager:info("In call_destination API with values ~p ~p", [Pid, Client]),
+    lager:debug("In call_destination API with values ~p ~p", [Pid, Client]),
     gen_fsm:send_event(Pid, {call_destination, Client}).
 
 outbound_pickup(Pid) ->
-    lager:info("In outbound_pickup API" , []),
+    lager:debug("In outbound_pickup API" , []),
     gen_fsm:send_event(Pid, outbound_pickup).
 
 %%====================================================================
@@ -79,37 +81,47 @@ outbound_pickup(Pid) ->
 %% gen_fsm:start_link/3,4, this function is called by the new process to
 %% initialize.
 %%--------------------------------------------------------------------
-init([Fnode, Agent, Dest, Conn]) ->
-    CallerId = "OpenACD",
-    case freeswitch:api(Fnode, create_uuid) of
-        {ok, UUID} ->
-            freeswitch:bgapi(Fnode, originate,
-            " {origination_uuid=" ++ UUID ++
-            ",ignore_early_media=true" ++
-            ",origination_caller_id_number=" ++ Agent ++
-            ",origination_caller_id_name=" ++ CallerId ++
-            ",hangup_after_bridge=true}sofia/openucrpm.ezuce.ph/" ++ Agent ++
-            "@openucrpm.ezuce.ph &park()"),
-            Time = util:now_ms(),
-            lager:info("testing output UUID ~p", [UUID]),
-            ouc_update(Conn, ?EVENT_KEY, UUID,
-                [{state, initiated}, {timestamp, Time}]),
-            % Reply = freeswitch:handlecall(Fnode, UUID),
-            % lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]),
-            {ok, precall, #state{uuid=UUID,
-                    fnode=Fnode,
-                    agent=Agent,
-                    destination=Dest,
-                    conn=Conn}};
-            % freeswitch:api(Cnode, expand,
-            % " originate {origination_uuid=" ++ UUID ++
-            % ",origination_caller_id_number=" ++ CallerId ++
-            % "}sofia/${domain}/" ++ Agent ++
-            % "@${domain} &bridge({origination_uuid=" ++ BLeg ++
-            % ",origination_caller_id_number=" ++ Agent ++
-            % "}sofia/${domain}/" ++
-            % Dest ++ "@${domain})"),
-        _ -> {stop, uuid_not_created}
+init([Fnode, Props]) ->
+    Type = proplists:get_value(type, Props),
+    Agent = proplists:get_value(agent, Props),
+    Conn = proplists:get_value(conn, Props),
+    case Type of
+        voicemail ->
+            Dest = proplists:get_value(destination, Props),
+            UUID = proplists:get_value(uuid, Props),
+            CallerId = "OutboundCall",
+            case freeswitch:api(Fnode, create_uuid) of
+                {ok, BLeg} ->
+                    originate(Fnode, BLeg, Dest, CallerId),
+                    Time = util:now_ms(),
+                    ouc_update(Conn, ?EVENT_KEY, UUID,
+                        [{state, outgoing_ringing}, {timestamp, Time}]),
+                    lager:debug("In call_destination state with bleg ~p", [BLeg]),
+                    {ok, awaiting_destination,
+                        #state{
+                            uuid = UUID, fnode = Fnode,
+                            agent = Agent, type = Type,
+                            destination = Dest, bleg = BLeg,
+                            conn = Conn}};
+                _ -> {stop, uuid_not_created}
+            end;
+        _ ->
+            Client = proplists:get_value(client, Props),
+            Conn = proplists:get_value(conn, Props),
+            CallerId = "OpenACD",
+            case freeswitch:api(Fnode, create_uuid) of
+                {ok, UUID} ->
+                    originate(Fnode, UUID, Agent, CallerId),
+                    Time = util:now_ms(),
+                    ouc_update(Conn, ?EVENT_KEY, UUID,
+                        [{state, initiated}, {timestamp, Time}]),
+                    {ok, precall, #state{uuid=UUID,
+                            fnode=Fnode,
+                            agent=Agent,
+                            client=Client,
+                            conn=Conn}};
+                _ -> {stop, uuid_not_created}
+            end
     end.
 
 %%--------------------------------------------------------------------
@@ -133,33 +145,29 @@ agent_ringing(agent_pickup, #state{
     {next_state, awaiting_destination, State}.
 
 
-awaiting_destination({call_destination, Client}, #state{
+awaiting_destination({call_destination, Dest}, #state{
         fnode=Fnode, uuid=UUID, conn=Conn} = State) ->
+    CallerId = "OutboundCall",
     case freeswitch:api(Fnode, create_uuid) of
         {ok, BLeg} ->
-            freeswitch:bgapi(Fnode, expand,
-            " originate {origination_uuid=" ++ BLeg ++
-            ",origination_caller_id_number=" ++ Client ++
-            ",origination_caller_id_name='Outbound Call'" ++
-            ",hangup_after_bridge=true}sofia/${domain}/" ++ Client ++
-            "@${domain} &park()"),
+            originate(Fnode, BLeg, Dest, CallerId),
             Time = util:now_ms(),
             ouc_update(Conn, ?EVENT_KEY, UUID,
                 [{state, outgoing_ringing}, {timestamp, Time}]),
-            lager:info("In call_destination state with bleg ~p", [BLeg]),
+            lager:debug("In call_destination state with bleg ~p", [BLeg]),
             {next_state, awaiting_destination,
-                State#state{destination = Client, bleg = BLeg}};
+                State#state{destination = Dest, bleg = BLeg}};
         _ ->
             {stop, uuid_not_created}
     end.
 
 outbound_ringing(outbound_pickup, #state{
         fnode=Fnode, uuid=UUID, bleg=BLeg, conn=Conn} = State) ->
-    lager:info("In outbound_pickup state", []),
+    lager:debug("In outbound_pickup state", []),
     BridgeOutcome = freeswitch:api(Fnode, uuid_bridge,
     " " ++ BLeg ++
     " " ++ UUID),
-    lager:info("Bridge result : ~p", [BridgeOutcome]),
+    lager:debug("Bridge result : ~p", [BridgeOutcome]),
     Time = util:now_ms(),
     ouc_update(Conn, ?EVENT_KEY, UUID,
         [{state, oncall}, {timestamp, Time}]),
@@ -200,7 +208,7 @@ state_name(_Event, _From, State) ->
 %% the event.
 %%--------------------------------------------------------------------
 handle_event(Event, StateName, State) ->
-	lager:info("Received Event ~p", [Event]),
+	lager:debug("Received Event ~p", [Event]),
   {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
@@ -220,7 +228,7 @@ handle_event(Event, StateName, State) ->
 %%--------------------------------------------------------------------
 handle_sync_event(Event, _From, StateName, State) ->
   Reply = ok,
-  lager:info("Received Event ~p", [Event]),
+  lager:debug("Received Event ~p", [Event]),
   {reply, Reply, StateName, State}.
 
 %%--------------------------------------------------------------------
@@ -246,32 +254,32 @@ handle_sync_event(Event, _From, StateName, State) ->
 %   case_event_name([UUID | Rest], Call, State#state{in_control = true});
 
 handle_info({call_event, {event, [UUID | EventPropList]}}, StateName, State) ->
-    lager:info("In call event info", []),
+    lager:debug("In call event info", []),
     case_event_name([UUID|EventPropList], StateName, State);
 
 handle_info({call, {event, [UUID | _EventPropList]}}, agent_ringing,
         #state{uuid=UUID} = State) ->
     agent_pickup(self()),
-    lager:info("Call established in ~p", [self()]),
+    lager:debug("Call established in ~p", [self()]),
     {next_state, agent_ringing, State};
 
 handle_info({call, {event, [BLeg | _EventPropList]}}, outbound_ringing,
         #state{bleg=BLeg} = State) ->
-    lager:info("BLeg established", []),
+    lager:debug("BLeg established", []),
     outbound_pickup(self()),
     {next_state, outbound_ringing, State};
 
 handle_info({error, Error}, _StateName, State) ->
-    lager:info("Error received: ~p", [Error]),
+    lager:debug("Error received: ~p", [Error]),
     {stop, Error, State};
 
 handle_info({bgerror, _MsgID, Error}, _StateName, State) ->
-    lager:info("Error received: ~p", [Error]),
+    lager:debug("Error received: ~p", [Error]),
     {stop, Error, State};
 
 handle_info(call_hangup, _StateName, State) ->
-  lager:info("Received call_hangup", []),
-  {stop, call_hangup, State};
+  lager:debug("Received call_hangup", []),
+  {stop, normal, State};
 
 % handle_info({bgok, UUID, Msg}, _StateName, State) ->
 %     lager:info("UUID: ~p", [UUID]),
@@ -288,12 +296,12 @@ handle_info({bgok, _MsgID, Reply}, StateName,
             handle_call(Fnode, BLeg),
             {next_state, outbound_ringing, State};
         Reply1 ->
-            lager:info("Reply : ~p", [Reply1]),
+            lager:debug("Reply : ~p", [Reply1]),
             {next_state, StateName, State}
     end;
 
 handle_info(Info, StateName, State) ->
-  lager:info("Received Info ~p\nStateName ~p\nState ~p", [Info,StateName,State]),
+  lager:debug("Received Info ~p\nStateName ~p\nState ~p", [Info,StateName,State]),
   {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
@@ -321,20 +329,29 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+originate(Fnode, UUID, Agent, CallerId) ->
+    freeswitch:bgapi(Fnode, expand,
+            "originate {origination_uuid=" ++ UUID ++
+            ",ignore_early_media=true" ++
+            ",origination_caller_id_number=" ++ Agent ++
+            ",origination_caller_id_name=" ++ CallerId ++
+            ",hangup_after_bridge=true}sofia/${domain}/" ++ Agent ++
+            "@${domain} &park()").
+
 case_event_name([UUID| EventPropList], StateName, State) ->
-    lager:info("In case event", []),
+    lager:debug("In case event", []),
     Ename = case proplists:get_value("Event-Name", EventPropList) of
         "CUSTOM" -> {"CUSTOM", proplists:get_value("Event-Subclass", EventPropList)};
         Else -> Else
     end,
-    lager:info("Event ~p for ~p ", [Ename, UUID]),
+    lager:debug("Event ~p for ~p ", [Ename, UUID]),
     case_event_name(Ename, UUID, StateName, State).
 
 case_event_name("CHANNEL_PARK", _UUID, StateName, State) ->
     {next_state, StateName, State};
 
 case_event_name(_Other, _UUID, StateName, State) ->
-    lager:info("In case event/4", []),
+    lager:debug("In case event/4", []),
     {next_state, StateName, State}.
 
 ouc_update(Conn, Event, CallId, Data) ->
@@ -342,4 +359,4 @@ ouc_update(Conn, Event, CallId, Data) ->
 
 handle_call(Fnode, UUID) ->
     Reply = freeswitch:handlecall(Fnode, UUID),
-    lager:info("handlecall reply for UUID ~p: ~p", [UUID, Reply]).
+    lager:debug("handlecall reply for UUID ~p: ~p", [UUID, Reply]).

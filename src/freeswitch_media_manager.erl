@@ -443,11 +443,12 @@ handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> %
 handle_call({initiate_outbound_call, {AgentLogin, Apid}, Client}, _From,
 	#state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
 	ARec = agent:dump_state(Apid),
-	ReleaseState = ARec#agent.release_data,
 	Conn = ARec#agent.connection,
-	Reply = case ReleaseState of
-		undefined -> {error, "not_released"};
-		_ -> freeswitch_outbound:start_link(Node, AgentLogin, Client, Conn)
+	AvailChan = ARec#agent.available_channels,
+	Reply = case lists:member(voice, AvailChan) of
+		false -> {error, "existing_call"};
+		true -> Props = [{agent, AgentLogin}, {client, Client}, {conn, Conn}],
+			freeswitch_outbound:start_link(Node, Props)
 	end,
 	{reply, Reply, State};
 %handle_call({record_outage, Client, AgentPid, Agent}, _From, #state{nodename = Node, freeswitch_up = FS} = State) when FS == true ->
@@ -668,10 +669,10 @@ handle_cast({channel_destroy, UUID}, #state{call_dict = Dict} = State) ->
 	end;
 handle_cast({make_outbound_call, Apid, Pid, Client}, #state{freeswitch_up = FS} = State) when FS == true ->
 	ARec = agent:dump_state(Apid),
-	ReleaseState = ARec#agent.release_data,
-	case ReleaseState of
-		undefined -> ok;
-		_ -> freeswitch_outbound:call_destination(Pid, Client)
+	AvailChan = ARec#agent.available_channels,
+	case lists:member(voice, AvailChan) of
+		true -> freeswitch_outbound:call_destination(Pid, Client);
+		false -> ok
 	end,
 	{noreply, State};
 handle_cast({notify, Callid, Pid}, #state{call_dict = Dict} = State) ->
