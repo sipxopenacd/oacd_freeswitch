@@ -85,6 +85,9 @@
 	handle_info/5,
 	handle_hold/2,
 	handle_unhold/2,
+
+	handle_conference_to_agent/4,
+
 	terminate/5,
 	code_change/4]).
 
@@ -879,6 +882,43 @@ handle_hold(_GenMediaState, #state{ringuuid = RingUUID} = State)
 	lager:debug("Calling uuid_hold with args ~p", [RingUUID]),
 	freeswitch:api(State#state.cnode, uuid_hold, RingUUID),
 	{ok, State#state{hold = hold}}.
+
+handle_conference_to_agent(AgentLogin, Call, _GenMediaState, State) ->
+	CallId = Call#call.id,
+	lager:info("Calling uuid_transfer with args ~p", [CallId ++ " conference:" ++
+		CallId ++ "@default inline"]),
+	freeswitch:api('freeswitch@127.0.0.1', uuid_transfer, CallId ++ " conference:" ++
+		CallId ++ "@default++flags{endconf|mintwo} inline"),
+	freeswitch:api('freeswitch@127.0.0.1', uuid_transfer, State#state.ringuuid ++ " conference:" ++
+		CallId ++ "@default inline"),
+	freeswitch:bgapi('freeswitch@127.0.0.1', originate, "sofia/openucrpm.ezuce.ph/" ++
+		AgentLogin ++ "@openucrpm.ezuce.ph &conference(" ++
+		CallId ++ "@default);", conference_callback()),
+	% Node = State#state.cnode,
+	% Apid = State#state.agent_pid,
+	% UUID = State#state.ringuuid,
+	% File = State#state.file,
+	% PlaybackMS = State#state.playback_ms,
+	% Location = proplists:get_value(location, Opts),
+
+	% Reply = play(Location, Node, UUID, File, State),
+	% case Reply of
+	% 	{ok, {started, Location}} ->
+	% 		lager:debug("Playback started at location ~p", [Location]),
+	% 		send_playback_update({started, Location}, Apid, Call, PlaybackMS);
+	% 	{ok, resumed} ->
+	% 		lager:debug("Playback resumed"),
+	% 		send_playback_update(resumed, Apid, Call, PlaybackMS);
+	% 	_ ->
+	% 		ok
+	% end,
+	{ok, State}.
+
+conference_callback() ->
+	Self = self(),
+	fun(Status, Reply) ->
+		Self ! {conference_result, {Status, Reply}}
+	end.
 
 %%--------------------------------------------------------------------
 %% handle_unhold
