@@ -141,7 +141,8 @@
 	spawn_oncall_mon :: 'undefined' | {pid(), reference()},
 	conference_id :: 'undefined' | string(),
 	'3rd_party_id' :: 'undefined' | string(),
-	'3rd_party_mon' :: 'undefined' | {pid(), reference()}
+	'3rd_party_mon' :: 'undefined' | {pid(), reference()},
+	third_party_uuid = undefined :: undefined | string()
 }).
 
 -type(state() :: #state{}).
@@ -846,9 +847,28 @@ handle_info({bgerror, Reply}, _StateName, Call, _Internal, State) ->
 	lager:warning("unhandled bgerror: ~p for ~p", [Reply, Call#call.id]),
 	{noreply, State};
 
-handle_info(channel_destroy, _StateName, Call, _Internal, #state{in_control = InControl} = State) when not InControl ->
-	lager:notice("Hangup in IVR for ~p", [Call#call.id]),
+handle_info({conference_result, {Status, Reply}}, _StateName, Call, _Internal, State) ->
+	case string:tokens(Reply, " \n") of
+		["+OK", ThirdUUID] ->
+			freeswitch_media_manager:notify(ThirdUUID, self()),
+			self() ! conference_accepted,
+			{noreply, State#state{third_party_uuid = ThirdUUID}};
+		_ ->
+			{noreply, State}
+	end;
+
+handle_info({channel_destroy, CallId}, _StateName, #call{id=Callid} = Call, _Internal, #state{in_control = InControl} = State) when not InControl ->
+	lager:notice("Hangup in IVR for ~p", [CallId]),
+	{noreply, State};
+
+handle_info({channel_destroy, ThirdUUID}, _StateName, _Call, _Internal, #state{third_party_uuid = ThirdUUID} = State) when ThirdUUID =/= undefined ->
+	self() ! third_party_hangup,
+	{noreply, State#state{third_party_uuid = undefined}};
+
+handle_info({channel_destroy, CallId}, _StateName, #call{id=Callid} = Call, _Internal, #state{in_control = InControl} = State) when not InControl ->
+	lager:notice("Hangup in IVR for ~p", [CallId]),
 	{stop, hangup, State};
+
 % TODO This had a use at some point, but was cuasing ramdom hangups.
 % need to find what was sending :(
 %handle_info(call_hangup, Call, State) ->
@@ -894,24 +914,6 @@ handle_conference_to_agent(AgentLogin, Call, _GenMediaState, State) ->
 	freeswitch:bgapi('freeswitch@127.0.0.1', originate, "sofia/openucrpm.ezuce.ph/" ++
 		AgentLogin ++ "@openucrpm.ezuce.ph &conference(" ++
 		CallId ++ "@default);", conference_callback()),
-	% Node = State#state.cnode,
-	% Apid = State#state.agent_pid,
-	% UUID = State#state.ringuuid,
-	% File = State#state.file,
-	% PlaybackMS = State#state.playback_ms,
-	% Location = proplists:get_value(location, Opts),
-
-	% Reply = play(Location, Node, UUID, File, State),
-	% case Reply of
-	% 	{ok, {started, Location}} ->
-	% 		lager:debug("Playback started at location ~p", [Location]),
-	% 		send_playback_update({started, Location}, Apid, Call, PlaybackMS);
-	% 	{ok, resumed} ->
-	% 		lager:debug("Playback resumed"),
-	% 		send_playback_update(resumed, Apid, Call, PlaybackMS);
-	% 	_ ->
-	% 		ok
-	% end,
 	{ok, State}.
 
 conference_callback() ->
