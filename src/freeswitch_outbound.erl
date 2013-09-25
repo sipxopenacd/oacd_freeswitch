@@ -16,6 +16,8 @@
 
 -behaviour(gen_fsm).
 
+-include_lib("openacd/include/agent.hrl").
+
 %% API
 -export([start_link/2,
          agent_pickup/1,
@@ -24,13 +26,16 @@
 
 %% gen_fsm callbacks
 -export([init/1, state_name/2, state_name/3,
-         agent_ringing/2, awaiting_destination/2, outbound_ringing/2,
+         agent_ringing/2, outbound_ringing/2, oncall/2,
+         awaiting_destination/3, oncall/3,
          handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
 -define(SERVER, ?MODULE).
 
 -define(EVENT_KEY, outbound_call).
+-define(ERR_NO_RESPONSE, "NO_USER_RESPONSE").
+-define(ERR_NO_PICKUP, "UNALLOCATED_NUMBER").
 
 -import(cpx_json_util, [l2b/1, b2l/1, nob/1]).
 
@@ -40,6 +45,7 @@
         fnode,
         conn,
         agent,
+        agent_pid,
         destination,
         client,
         type
@@ -63,7 +69,7 @@ agent_pickup(Pid) ->
 
 call_destination(Pid, Client) ->
     lager:debug("In call_destination API with values ~p ~p", [Pid, Client]),
-    gen_fsm:send_event(Pid, {call_destination, Client}).
+    gen_fsm:sync_send_event(Pid, {call_destination, Client}, infinity).
 
 outbound_pickup(Pid) ->
     lager:debug("In outbound_pickup API" , []),
@@ -108,6 +114,7 @@ init([Fnode, Props]) ->
         _ ->
             Client = proplists:get_value(client, Props),
             Conn = proplists:get_value(conn, Props),
+            AgentPid = proplists:get_value(agent_pid, Props),
             CallerId = "OpenACD",
             case freeswitch:api(Fnode, create_uuid) of
                 {ok, UUID} ->
@@ -118,6 +125,7 @@ init([Fnode, Props]) ->
                     {ok, precall, #state{uuid=UUID,
                             fnode=Fnode,
                             agent=Agent,
+                            agent_pid=AgentPid,
                             client=Client,
                             conn=Conn}};
                 _ -> {stop, uuid_not_created}
@@ -142,24 +150,11 @@ agent_ringing(agent_pickup, #state{
     ouc_update(Conn, ?EVENT_KEY, UUID,
         [{state, awaiting_destination}, {timestamp, Time}]),
     freeswitch:bgapi(Fnode, uuid_broadcast, UUID ++ " local_stream://moh"),
-    {next_state, awaiting_destination, State}.
+    {next_state, awaiting_destination, State};
 
-
-awaiting_destination({call_destination, Dest}, #state{
-        fnode=Fnode, uuid=UUID, conn=Conn} = State) ->
-    CallerId = "OutboundCall",
-    case freeswitch:api(Fnode, create_uuid) of
-        {ok, BLeg} ->
-            originate(Fnode, BLeg, Dest, CallerId),
-            Time = util:now_ms(),
-            ouc_update(Conn, ?EVENT_KEY, UUID,
-                [{state, outgoing_ringing}, {timestamp, Time}]),
-            lager:debug("In call_destination state with bleg ~p", [BLeg]),
-            {next_state, awaiting_destination,
-                State#state{destination = Dest, bleg = BLeg}};
-        _ ->
-            {stop, uuid_not_created}
-    end.
+agent_ringing(Event, State) ->
+    lager:info("unhandled event ~p while in state ~p", [Event, agent_ringing]),
+    {next_state, agent_ringing, State}.
 
 outbound_ringing(outbound_pickup, #state{
         fnode=Fnode, uuid=UUID, bleg=BLeg, conn=Conn} = State) ->
@@ -171,6 +166,14 @@ outbound_ringing(outbound_pickup, #state{
     Time = util:now_ms(),
     ouc_update(Conn, ?EVENT_KEY, UUID,
         [{state, oncall}, {timestamp, Time}]),
+    {next_state, oncall, State};
+
+outbound_ringing(Event, State) ->
+    lager:info("unhandled event ~p while in state ~p", [Event, outbound_ringing]),
+    {next_state, outbound_ringing, State}.
+
+oncall(Event, State) ->
+    lager:info("unhandled event ~p while in state ~p", [Event, oncall]),
     {next_state, oncall, State}.
 
 state_name(_Event, State) ->
@@ -191,6 +194,30 @@ state_name(_Event, State) ->
 %% gen_fsm:sync_send_event/2,3, the instance of this function with the same
 %% name as the current state name StateName is called to handle the event.
 %%--------------------------------------------------------------------
+
+awaiting_destination({call_destination, Dest}, _From,
+    #state{fnode=Fnode, uuid=UUID, conn=Conn} = State) ->
+    CallerId = "OutboundCall",
+    case freeswitch:api(Fnode, create_uuid) of
+        {ok, BLeg} ->
+            originate(Fnode, BLeg, Dest, CallerId),
+            Time = util:now_ms(),
+            ouc_update(Conn, ?EVENT_KEY, UUID,
+                [{state, outgoing_ringing}, {timestamp, Time}]),
+            lager:debug("In call_destination state with bleg ~p", [BLeg]),
+            {reply, ok, awaiting_destination,
+                State#state{destination = Dest, bleg = BLeg}};
+        _ ->
+            {stop, uuid_not_created}
+    end;
+
+awaiting_destination(Event, _From, State) ->
+    lager:info("unhandled event ~p while in state ~p", [Event, awaiting_destination]),
+    {reply, ok, awaiting_destination, State}.
+
+oncall(Event, _From, State) ->
+    lager:info("unhandled event ~p while in state ~p", [Event, oncall]),
+    {reply, {error, existing_call}, oncall, State}.
 
 state_name(_Event, _From, State) ->
   Reply = ok,
@@ -275,7 +302,19 @@ handle_info({error, Error}, _StateName, State) ->
 
 handle_info({bgerror, _MsgID, Error}, _StateName, State) ->
     lager:debug("Error received: ~p", [Error]),
-    {stop, Error, State};
+    ErrorTok = string:tokens(Error, " \n"),
+    ErrorReply = case ErrorTok of
+        ["-ERR"|[?ERR_NO_RESPONSE]] ->
+            no_response;
+        ["-ERR"|[?ERR_NO_PICKUP]] ->
+            no_pickup;
+        ["-ERR"|[ErrorList]] when is_list(ErrorList) ->
+            cpx_json_util:l2b(ErrorList);
+        Error1 ->
+            lager:info("Unhandled error ~p", [Error1]),
+            unknown_error
+    end,
+    {stop, ErrorReply, State};
 
 handle_info(call_hangup, _StateName, State) ->
   lager:debug("Received call_hangup", []),
@@ -288,17 +327,18 @@ handle_info(call_hangup, _StateName, State) ->
 handle_info({bgok, _MsgID, Reply}, StateName,
     #state{fnode=Fnode, uuid=UUID, bleg=BLeg} = State) ->
     ReplyList = string:tokens(Reply, " \n"),
-    case ReplyList of
+    NextState = case ReplyList of
         ["+OK"|[UUID]] ->
             handle_call(Fnode, UUID),
-            {next_state, agent_ringing, State};
+            agent_ringing;
         ["+OK"|[BLeg]] ->
             handle_call(Fnode, BLeg),
-            {next_state, outbound_ringing, State};
+            outbound_ringing;
         Reply1 ->
             lager:debug("Reply : ~p", [Reply1]),
-            {next_state, StateName, State}
-    end;
+            StateName
+    end,
+    {next_state, NextState, State};
 
 handle_info(Info, StateName, State) ->
   lager:debug("Received Info ~p\nStateName ~p\nState ~p", [Info,StateName,State]),
@@ -311,11 +351,15 @@ handle_info(Info, StateName, State) ->
 %% necessary cleaning up. When it returns, the gen_fsm terminates with
 %% Reason. The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, #state{
-        uuid=UUID, conn=Conn} = _State) ->
+terminate(Reason, _StateName, #state{
+        uuid=UUID, conn=Conn, agent=Agent, agent_pid=AgentPid} = _State) ->
     Time = util:now_ms(),
     ouc_update(Conn, ?EVENT_KEY, UUID,
-        [{state, ended}, {timestamp, Time}]),
+        [{state, ended}, {reason, Reason}, {timestamp, Time}]),
+    ARec = agent:dump_state(AgentPid),
+    AvailChan = ARec#agent.available_channels,
+    NewAvail = AvailChan ++ [voice],
+    agent_manager:set_avail(Agent, NewAvail),
     ok.
 
 %%--------------------------------------------------------------------

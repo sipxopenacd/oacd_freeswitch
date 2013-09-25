@@ -278,7 +278,7 @@ initiate_outbound_call({AgentLogin, Apid}, Client) ->
 
 -spec(make_outbound_call/3 :: (Apid :: pid(), Pid :: pid(), Client :: string()) -> {'ok', pid()} | {'error', any()}).
 make_outbound_call(Apid, Pid, Client) ->
-	gen_server:cast(?MODULE, {make_outbound_call, Apid, Pid, Client}).
+	gen_server:call(?MODULE, {make_outbound_call, Apid, Pid, Client}).
 
 -spec(record_outage/3 :: (Client :: any(), AgentPid :: pid(), Agent :: string()) -> 'ok' | {'error', any()}).
 record_outage(Client, AgentPid, Agent) ->
@@ -438,6 +438,15 @@ handle_call({get_ring_data, Agent, Options}, _From, #state{fetch_domain_user = U
 		_ -> {reply, {Node, Base, Destination}, State}
 	end;
 
+handle_call({make_outbound_call, Apid, Pid, Client}, _From,
+	#state{freeswitch_up = FS} = State) when FS == true ->
+	ARec = agent:dump_state(Apid),
+	AvailChan = ARec#agent.available_channels,
+	Reply = case lists:member(voice, AvailChan) of
+		true -> freeswitch_outbound:call_destination(Pid, Client);
+		false -> {error, "existing_call"}
+	end,
+	{reply, Reply, State};
 handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> % freeswitch is down
 	{reply, {error, noconnection}, State};
 handle_call({initiate_outbound_call, {AgentLogin, Apid}, Client}, _From,
@@ -445,9 +454,11 @@ handle_call({initiate_outbound_call, {AgentLogin, Apid}, Client}, _From,
 	ARec = agent:dump_state(Apid),
 	Conn = ARec#agent.connection,
 	AvailChan = ARec#agent.available_channels,
-	Reply = case lists:member(voice, AvailChan) of
-		false -> {error, "existing_call"};
-		true -> Props = [{agent, AgentLogin}, {client, Client}, {conn, Conn}],
+	Reply = case lists:delete(voice, AvailChan) of
+		AvailChan -> {error, existing_call};
+		NewAvail ->
+			agent_manager:set_avail(AgentLogin, NewAvail),
+			Props = [{agent, AgentLogin}, {client, Client}, {conn, Conn}, {agent_pid, Apid}],
 			freeswitch_outbound:start_link(Node, Props)
 	end,
 	{reply, Reply, State};
@@ -667,14 +678,6 @@ handle_cast({channel_destroy, UUID}, #state{call_dict = Dict} = State) ->
 		error ->
 			{noreply, State}
 	end;
-handle_cast({make_outbound_call, Apid, Pid, Client}, #state{freeswitch_up = FS} = State) when FS == true ->
-	ARec = agent:dump_state(Apid),
-	AvailChan = ARec#agent.available_channels,
-	case lists:member(voice, AvailChan) of
-		true -> freeswitch_outbound:call_destination(Pid, Client);
-		false -> ok
-	end,
-	{noreply, State};
 handle_cast({notify, Callid, Pid}, #state{call_dict = Dict} = State) ->
 	NewDict = dict:store(Callid, Pid, Dict),
 	{noreply, State#state{call_dict = NewDict}};
