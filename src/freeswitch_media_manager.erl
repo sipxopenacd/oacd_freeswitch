@@ -825,7 +825,6 @@ listener(Node) ->
 		{event, [UUID | Event]} ->
 			lager:debug("recieved event '~p' from c node.", [UUID]),
 			Ename = proplists:get_value("Event-Name", Event),
-			lager:info("Received event ~p for ~p", [Event, UUID]),
 			case Ename of
 				"CHANNEL_DESTROY" ->
 					gen_server:cast(?MODULE, {channel_destroy, UUID});

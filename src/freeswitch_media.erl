@@ -848,12 +848,19 @@ handle_info({bgerror, Reply}, _StateName, Call, _Internal, State) ->
 	{noreply, State};
 
 handle_info({conference_result, {Status, Reply}}, _StateName, Call, _Internal, State) ->
-	case string:tokens(Reply, " \n") of
-		["+OK", ThirdUUID] ->
-			freeswitch_media_manager:notify(ThirdUUID, self()),
-			self() ! conference_accepted,
-			{noreply, State#state{third_party_uuid = ThirdUUID}};
+	case Status of
+		ok ->
+			case string:tokens(Reply, " \n") of
+				["+OK", ThirdUUID] ->
+					freeswitch_media_manager:notify(ThirdUUID, self()),
+					self() ! conference_accepted,
+					{noreply, State#state{third_party_uuid = ThirdUUID}};
+				_ ->
+					self() ! conference_declined,
+					{noreply, State}
+			end;
 		_ ->
+			self() ! conference_declined,
 			{noreply, State}
 	end;
 
@@ -911,7 +918,7 @@ handle_conference_to_agent(AgentLogin, Call, _GenMediaState, State) ->
 		CallId ++ "@default++flags{endconf|mintwo} inline"),
 	freeswitch:api('freeswitch@127.0.0.1', uuid_transfer, State#state.ringuuid ++ " conference:" ++
 		CallId ++ "@default inline"),
-	freeswitch:bgapi('freeswitch@127.0.0.1', originate, "sofia/openucrpm.ezuce.ph/" ++
+	freeswitch:bgapi('freeswitch@127.0.0.1', originate, "{origination_caller_id_name='Conference',origination_caller_id_number='Conference'}sofia/openucrpm.ezuce.ph/" ++
 		AgentLogin ++ "@openucrpm.ezuce.ph &conference(" ++
 		CallId ++ "@default);", conference_callback()),
 	{ok, State}.
