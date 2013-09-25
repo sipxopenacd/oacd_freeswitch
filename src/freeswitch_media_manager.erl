@@ -438,14 +438,9 @@ handle_call({get_ring_data, Agent, Options}, _From, #state{fetch_domain_user = U
 		_ -> {reply, {Node, Base, Destination}, State}
 	end;
 
-handle_call({make_outbound_call, Apid, Pid, Client}, _From,
+handle_call({make_outbound_call, _Apid, Pid, Client}, _From,
 	#state{freeswitch_up = FS} = State) when FS == true ->
-	ARec = agent:dump_state(Apid),
-	AvailChan = ARec#agent.available_channels,
-	Reply = case lists:member(voice, AvailChan) of
-		true -> freeswitch_outbound:call_destination(Pid, Client);
-		false -> {error, "existing_call"}
-	end,
+	Reply = freeswitch_outbound:call_destination(Pid, Client),
 	{reply, Reply, State};
 handle_call({make_outbound_call, _Client, _AgentPid, _Agent}, _From, State) -> % freeswitch is down
 	{reply, {error, noconnection}, State};
@@ -454,10 +449,14 @@ handle_call({initiate_outbound_call, {AgentLogin, Apid}, Client}, _From,
 	ARec = agent:dump_state(Apid),
 	Conn = ARec#agent.connection,
 	AvailChan = ARec#agent.available_channels,
-	Reply = case lists:delete(voice, AvailChan) of
-		AvailChan -> {error, existing_call};
-		NewAvail ->
-			agent_manager:set_avail(AgentLogin, NewAvail),
+	lager:info("Available channels ~p", [AvailChan]),
+	Reply = case lists:member(voice, AvailChan) of
+		false -> {error, existing_call};
+		true ->
+			NewAvail = lists:delete(voice, AvailChan),
+			Reply1 = agent:set_avail(Apid, NewAvail),
+			lager:info("Set avail reply ~p", [Reply1]),
+			lager:info("Available channels ~p", [NewAvail]),
 			Props = [{agent, AgentLogin}, {client, Client}, {conn, Conn}, {agent_pid, Apid}],
 			freeswitch_outbound:start_link(Node, Props)
 	end,

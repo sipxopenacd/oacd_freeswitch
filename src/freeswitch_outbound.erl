@@ -352,14 +352,14 @@ handle_info(Info, StateName, State) ->
 %% Reason. The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(Reason, _StateName, #state{
-        uuid=UUID, conn=Conn, agent=Agent, agent_pid=AgentPid} = _State) ->
+        uuid=UUID, conn=Conn, agent_pid=AgentPid} = _State) ->
     Time = util:now_ms(),
     ouc_update(Conn, ?EVENT_KEY, UUID,
         [{state, ended}, {reason, Reason}, {timestamp, Time}]),
     ARec = agent:dump_state(AgentPid),
     AvailChan = ARec#agent.available_channels,
     NewAvail = AvailChan ++ [voice],
-    agent_manager:set_avail(Agent, NewAvail),
+    agent:set_avail(AgentPid, NewAvail),
     ok.
 
 %%--------------------------------------------------------------------
