@@ -144,6 +144,7 @@
 	'3rd_party_id' :: 'undefined' | string(),
 	'3rd_party_mon' :: 'undefined' | {pid(), reference()},
 	third_party_uuid = undefined :: undefined | string(),
+	third_party_agent = undefined :: undefined | string(),
 	conference_uuids :: [{string(), string()}]
 }).
 
@@ -859,7 +860,7 @@ handle_info({conference_result, {Agent, Status, Reply}}, _StateName, Call, _Inte
 					freeswitch_media_manager:notify(ThirdUUID, self()),
 					self() ! conference_accepted,
 					ConfUuids = State#state.conference_uuids,
-					{noreply, State#state{third_party_uuid = ThirdUUID, conference_uuids = [{Agent, ThirdUUID} | ConfUuids]}};
+					{noreply, State#state{third_party_uuid = ThirdUUID, third_party_agent = Agent, conference_uuids = [{Agent, ThirdUUID} | ConfUuids]}};
 				_ ->
 					self() ! conference_declined,
 					{noreply, State}
@@ -873,8 +874,8 @@ handle_info({channel_destroy, CallId}, _StateName, #call{id=Callid} = Call, _Int
 	lager:notice("Hangup in IVR for ~p", [CallId]),
 	{noreply, State};
 
-handle_info({channel_destroy, ThirdUUID}, _StateName, _Call, _Internal, #state{third_party_uuid = ThirdUUID} = State) when ThirdUUID =/= undefined ->
-	self() ! third_party_hangup,
+handle_info({channel_destroy, ThirdUUID}, _StateName, _Call, _Internal, #state{third_party_uuid = ThirdUUID, third_party_agent = Agt} = State) when ThirdUUID =/= undefined ->
+	self() ! {third_party_hangup, Agt},
 	{noreply, State#state{third_party_uuid = undefined}};
 
 handle_info({channel_destroy, CallId}, _StateName, #call{id=Callid} = Call, _Internal, #state{in_control = InControl} = State) when not InControl ->
