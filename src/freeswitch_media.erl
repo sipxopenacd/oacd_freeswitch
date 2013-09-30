@@ -87,6 +87,7 @@
 	handle_unhold/2,
 
 	handle_conference_to_agent/4,
+	handle_leave_conference/4,
 
 	terminate/5,
 	code_change/4]).
@@ -142,7 +143,8 @@
 	conference_id :: 'undefined' | string(),
 	'3rd_party_id' :: 'undefined' | string(),
 	'3rd_party_mon' :: 'undefined' | {pid(), reference()},
-	third_party_uuid = undefined :: undefined | string()
+	third_party_uuid = undefined :: undefined | string(),
+	conference_uuids :: [{string(), string()}]
 }).
 
 -type(state() :: #state{}).
@@ -289,8 +291,10 @@ handle_answer(Apid, StateName, Callrec, GenMediaState, State) when
 					freeswitch:api(State#state.cnode, uuid_record, Callrec#call.id ++ " start "++Path++".wav"),
 					Path++".wav"
 			end,
+			{ok, Agent} = agent_channel:get_agent(Apid),
+			AgentLogin = Agent#agent.login,
 			agent_channel:media_push(Apid, Callrec, {mediaload, Callrec, [{<<"height">>, <<"300px">>}, {<<"title">>, <<"Server Boosts">>}]}),
-			{ok, State#state{agent_pid = Apid, record_path = RecPath, queued = false, statename = oncall, ringchannel = RingPid, ringuuid = RingUUID}};
+			{ok, State#state{agent = AgentLogin, agent_pid = Apid, record_path = RecPath, queued = false, statename = oncall, ringchannel = RingPid, ringuuid = RingUUID}};
 		{error, Error} ->
 			lager:warning("Could not do answer:  ~p", [Error]),
 			{error, Error, State}
@@ -847,14 +851,15 @@ handle_info({bgerror, Reply}, _StateName, Call, _Internal, State) ->
 	lager:warning("unhandled bgerror: ~p for ~p", [Reply, Call#call.id]),
 	{noreply, State};
 
-handle_info({conference_result, {Status, Reply}}, _StateName, Call, _Internal, State) ->
+handle_info({conference_result, {Agent, Status, Reply}}, _StateName, Call, _Internal, State) ->
 	case Status of
 		ok ->
 			case string:tokens(Reply, " \n") of
 				["+OK", ThirdUUID] ->
 					freeswitch_media_manager:notify(ThirdUUID, self()),
 					self() ! conference_accepted,
-					{noreply, State#state{third_party_uuid = ThirdUUID}};
+					ConfUuids = State#state.conference_uuids,
+					{noreply, State#state{third_party_uuid = ThirdUUID, conference_uuids = [{Agent, ThirdUUID} | ConfUuids]}};
 				_ ->
 					self() ! conference_declined,
 					{noreply, State}
@@ -910,7 +915,9 @@ handle_hold(_GenMediaState, #state{ringuuid = RingUUID} = State)
 	freeswitch:api(State#state.cnode, uuid_hold, RingUUID),
 	{ok, State#state{hold = hold}}.
 
-handle_conference_to_agent(AgentLogin, Call, _GenMediaState, State) ->
+handle_conference_to_agent(Agent, Call, _GenMediaState, State) ->
+	OrigAgent = State#state.agent,
+	OrigUuid = State#state.ringuuid,
 	CallId = Call#call.id,
 	lager:info("Calling uuid_transfer with args ~p", [CallId ++ " conference:" ++
 		CallId ++ "@default inline"]),
@@ -919,14 +926,24 @@ handle_conference_to_agent(AgentLogin, Call, _GenMediaState, State) ->
 	freeswitch:api('freeswitch@127.0.0.1', uuid_transfer, State#state.ringuuid ++ " conference:" ++
 		CallId ++ "@default inline"),
 	freeswitch:bgapi('freeswitch@127.0.0.1', originate, "{origination_caller_id_name='Conference',origination_caller_id_number='Conference'}sofia/openucrpm.ezuce.ph/" ++
-		AgentLogin ++ "@openucrpm.ezuce.ph &conference(" ++
-		CallId ++ "@default);", conference_callback()),
-	{ok, State}.
+		Agent ++ "@openucrpm.ezuce.ph &conference(" ++
+		CallId ++ "@default);", conference_callback(Agent)),
+	ConfUuids = [{OrigAgent, OrigUuid}],
+	{ok, State#state{conference_uuids = ConfUuids}}.
 
-conference_callback() ->
+handle_leave_conference(Agent, _Call, _GenMediaState, State) ->
+	ConfUuids = State#state.conference_uuids,
+	case proplists:get_value(Agent, ConfUuids) of
+		CallId when is_list(CallId) ->
+			freeswitch:api('freeswitch@127.0.0.1', uuid_kill, CallId);
+		_ ->
+			ignore
+	end,
+	{ok, State}.
+conference_callback(Agent) ->
 	Self = self(),
 	fun(Status, Reply) ->
-		Self ! {conference_result, {Status, Reply}}
+		Self ! {conference_result, {Agent, Status, Reply}}
 	end.
 
 %%--------------------------------------------------------------------
