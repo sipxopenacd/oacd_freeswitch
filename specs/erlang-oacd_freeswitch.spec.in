@@ -17,6 +17,7 @@ BuildRequires:	erlang-lager
 BuildRequires:	erlang-ejrpc2
 BuildRequires:  erlang-ej
 BuildRequires:	erlang-openacd
+BuildRequires:  erlang-meck
 Requires:	erlang-erts%{?_isa} >= R15B
 Requires:	erlang-kernel%{?_isa}
 Requires:	erlang-stdlib%{?_isa} >= R15B
